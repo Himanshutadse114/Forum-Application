@@ -3259,109 +3259,105 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
             ),
           ]),
           const SizedBox(height: 12),
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF0A1628),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFF0EA5E9).withOpacity(0.3)),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: GestureDetector(
-                  onTap: () {
-                    if (!_flappyStarted || _flappyDead) {
-                      _startFlappy();
-                    } else {
-                      _flapDrone();
-                    }
-                  },
-                  child: Stack(children: [
-                    // Background grid lines
-                    Positioned.fill(
-                      child: CustomPaint(painter: _GridPainter()),
-                    ),
-                    
-                    // Responsive Barrier Layout Builder (Easy Mode!)
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final double totalHeight = constraints.maxHeight;
-                        final double halfHeight = totalHeight / 2;
-                        
-                        final double topBarrierHeight = (halfHeight * (_gapTop + 1) / 2).clamp(0.0, halfHeight);
-                        final double gapPixels = totalHeight * 0.36; // Generous easy mode gap!
-                        final double bottomBarrierHeight = (totalHeight - topBarrierHeight - gapPixels).clamp(0.0, totalHeight);
+          Container(
+            height: (MediaQuery.of(context).size.height - 240).clamp(360.0, 580.0),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A1628),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFF0EA5E9).withOpacity(0.3)),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: GestureDetector(
+                onTap: () {
+                  if (!_flappyStarted || _flappyDead) {
+                    _startFlappy();
+                  } else {
+                    _flapDrone();
+                  }
+                },
+                child: Stack(children: [
+                  // Background grid lines
+                  Positioned.fill(
+                    child: CustomPaint(painter: _GridPainter()),
+                  ),
+                  
+                  // Responsive Barrier Layout Builder (Easy Mode!)
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final double totalHeight = constraints.maxHeight;
+                      final double topBarrierHeight = (totalHeight * (_gapTop + 1.0) / 2).clamp(0.0, totalHeight);
+                      final double bottomBarrierHeight = (totalHeight * (0.28 - _gapTop) / 2).clamp(0.0, totalHeight);
 
-                        return Stack(
-                          children: [
-                            // Top Barrier
-                            Align(
-                              alignment: Alignment(_barrierX, -1.0),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(width: 32, height: topBarrierHeight, color: const Color(0xFF0EA5E9).withOpacity(0.7)),
-                                  Container(width: 32, height: 8, decoration: BoxDecoration(color: const Color(0xFF0EA5E9), borderRadius: BorderRadius.circular(4))),
-                                ],
-                              ),
-                            ),
-                            // Bottom Barrier
-                            Align(
-                              alignment: Alignment(_barrierX, 1.0),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(width: 32, height: 8, decoration: BoxDecoration(color: const Color(0xFF0EA5E9), borderRadius: BorderRadius.circular(4))),
-                                  Container(width: 32, height: bottomBarrierHeight, color: const Color(0xFF0EA5E9).withOpacity(0.7)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-
-                    // Drone
-                    Align(
-                      alignment: Alignment(-0.1, _droneY),
-                      child: Container(
-                        width: 42, height: 42,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF6B35),
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: [BoxShadow(color: const Color(0xFFFF6B35).withOpacity(0.5), blurRadius: 8)],
-                        ),
-                        child: const Icon(Icons.flight_rounded, color: Colors.white, size: 20),
-                      ),
-                    ),
-
-                    // Start / Dead overlay
-                    if (!_flappyStarted || _flappyDead)
-                      Container(
-                        color: Colors.black.withOpacity(0.65),
-                        child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(_flappyDead ? Icons.broken_image_rounded : Icons.play_circle_fill_rounded, color: const Color(0xFF0EA5E9), size: 64),
-                          const SizedBox(height: 16),
-                          Text(_flappyDead ? 'DRONE CRASHED!\nTap to Restart' : 'Tap to Launch Drone', textAlign: TextAlign.center,
-                            style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                          const SizedBox(height: 12),
-                          if (_flappyDead) ...[
-                            Text('Packets dodged: $_flappyScore  |  XP earned: ${_flappyScore * 5}',
-                              style: GoogleFonts.inter(fontSize: 13, color: Colors.white70)),
-                            const SizedBox(height: 16),
-                          ],
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Text(
-                              'HOW TO PLAY: Tap anywhere inside the screen to thrust your Drone upward. Guide it through the gaps in the firewall data packets to dodge them. Each packet earns +5 XP!',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(fontSize: 11, color: Colors.white60, height: 1.4),
+                      return Stack(
+                        children: [
+                          // Top Barrier
+                          Align(
+                            alignment: Alignment(_barrierX, -1.0),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(width: 32, height: topBarrierHeight, color: const Color(0xFF0EA5E9).withOpacity(0.7)),
+                                Container(width: 32, height: 8, decoration: BoxDecoration(color: const Color(0xFF0EA5E9), borderRadius: BorderRadius.circular(4))),
+                              ],
                             ),
                           ),
-                        ])),
+                          // Bottom Barrier
+                          Align(
+                            alignment: Alignment(_barrierX, 1.0),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(width: 32, height: 8, decoration: BoxDecoration(color: const Color(0xFF0EA5E9), borderRadius: BorderRadius.circular(4))),
+                                Container(width: 32, height: bottomBarrierHeight, color: const Color(0xFF0EA5E9).withOpacity(0.7)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+
+                  // Drone
+                  Align(
+                    alignment: Alignment(-0.1, _droneY),
+                    child: Container(
+                      width: 42, height: 42,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF6B35),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [BoxShadow(color: const Color(0xFFFF6B35).withOpacity(0.5), blurRadius: 8)],
                       ),
-                  ]),
-                ),
+                      child: const Icon(Icons.flight_rounded, color: Colors.white, size: 20),
+                    ),
+                  ),
+
+                  // Start / Dead overlay
+                  if (!_flappyStarted || _flappyDead)
+                    Container(
+                      color: Colors.black.withOpacity(0.65),
+                      child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(_flappyDead ? Icons.broken_image_rounded : Icons.play_circle_fill_rounded, color: const Color(0xFF0EA5E9), size: 64),
+                        const SizedBox(height: 16),
+                        Text(_flappyDead ? 'DRONE CRASHED!\nTap to Restart' : 'Tap to Launch Drone', textAlign: TextAlign.center,
+                          style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                        const SizedBox(height: 12),
+                        if (_flappyDead) ...[
+                          Text('Packets dodged: $_flappyScore  |  XP earned: ${_flappyScore * 5}',
+                            style: GoogleFonts.inter(fontSize: 13, color: Colors.white70)),
+                          const SizedBox(height: 16),
+                        ],
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          child: Text(
+                            'HOW TO PLAY: Tap anywhere inside the screen to thrust your Drone upward. Guide it through the gaps in the firewall data packets to dodge them. Each packet earns +5 XP!',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(fontSize: 11, color: Colors.white60, height: 1.4),
+                          ),
+                        ),
+                      ])),
+                    ),
+                ]),
               ),
             ),
           ),
@@ -3564,6 +3560,9 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
 class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0 || !size.width.isFinite || !size.height.isFinite) {
+      return;
+    }
     final paint = Paint()
       ..color = const Color(0xFF0EA5E9).withOpacity(0.08)
       ..strokeWidth = 0.5;
