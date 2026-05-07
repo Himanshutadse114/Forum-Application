@@ -9,7 +9,7 @@ import 'package:cybershield_forum/features/auth/provider.dart';
 import 'package:cybershield_forum/features/forum/provider.dart';
 import 'package:cybershield_forum/features/reports/provider.dart';
 import 'package:cybershield_forum/features/forum/screens/post_detail_screen.dart';
-import '../../../view/voice/voice_lounge_screen.dart';
+
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -705,19 +705,7 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
                     if (widget.onNavigate != null) widget.onNavigate!(2);
                   },
                 ),
-                _buildQuickActionCard(
-                  title: 'Lounge',
-                  subtitle: 'Call',
-                  icon: Icons.headset_mic_outlined,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => VoiceLoungeScreen(),
-                      ),
-                    );
-                  },
-                ),
+
               ],
             ),
             const SizedBox(height: 28),
