@@ -14,9 +14,15 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 subprojects {
-    if (project.name == "jitsi_meet_flutter_sdk") {
-        project.android {
-            namespace "com.example.jitsi_meet_flutter_sdk"
+    project.plugins.withId("com.android.library") {
+        if (project.name == "jitsi_meet_flutter_sdk") {
+            project.android {
+                namespace "org.jitsi.jitsi_meet_flutter_sdk"
+            }
+            def manifestFile = file("${project.projectDir}/src/main/AndroidManifest.xml")
+            if (manifestFile.exists()) {
+                manifestFile.text = manifestFile.text.replaceAll(/package="[^"]*"/, "")
+            }
         }
     }
 }
