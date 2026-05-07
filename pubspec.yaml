@@ -35,5 +35,5 @@ flutter:
     - assets/images/
 
 dependency_overrides:
-  url_launcher_android: 6.3.0
+  url_launcher_android: 6.3.10
 
