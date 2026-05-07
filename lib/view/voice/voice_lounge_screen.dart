@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
-import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 class VoiceLoungeScreen extends StatefulWidget {
   @override
@@ -45,19 +44,7 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
   }
 
   void _initWebViewController() {
-    late final PlatformWebViewControllerCreationParams params;
-    if (WebViewPlatform.instance is WebKitWebViewPlatform) {
-      params = WebKitWebViewControllerCreationParams(
-        allowsInlineMediaPlayback: true,
-        mediaTypesRequiringUserActionForPlayback: const <PlaybackMediaTypes>{},
-      );
-    } else {
-      params = const PlatformWebViewControllerCreationParams();
-    }
-
-    final WebViewController controller = WebViewController.fromPlatformCreationParams(params);
-
-    controller
+    final WebViewController controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(_discordDarkBg)
       ..setNavigationDelegate(
@@ -78,12 +65,11 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
         ),
       );
 
-    // CRITICAL: Automatically grant microphone & audio permission requests inside the Android WebView!
+    // CRITICAL: Automatically grant microphone & audio permission requests!
     if (controller.platform is AndroidWebViewController) {
-      AndroidWebViewController.enableDebugging(true);
-      (controller.platform as AndroidWebViewController).setPermissionRequestHandler(
-        (AndroidWebViewPermissionRequest request) async {
-          return AndroidWebViewPermissionDecision.grant;
+      (controller.platform as AndroidWebViewController).setOnPlatformPermissionRequest(
+        (PlatformWebViewPermissionRequest request) {
+          request.grant();
         },
       );
     }
