@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cybershield_forum/core/api_client.dart';
 import 'package:cybershield_forum/core/hive_box.dart';
+import 'package:dio/dio.dart';
 
 class AuthState {
   final bool isLoading;
