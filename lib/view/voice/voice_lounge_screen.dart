@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class VoiceLoungeScreen extends StatefulWidget {
   @override
@@ -7,22 +7,22 @@ class VoiceLoungeScreen extends StatefulWidget {
 }
 
 class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
-  final JitsiMeet _jitsiMeet = JitsiMeet();
   final String _roomName = "InnviktaVoiceLounge";
 
-  void _joinMeeting() {
-    var options = JitsiMeetConferenceOptions(
-      room: _roomName,
-      configOverrides: {
-        "startWithVideoMuted": true,
-        "prejoinPageEnabled": false,
-      },
-      userInfo: JitsiMeetUserInfo(
-        displayName: "Innvikta Member",
-      ),
-    );
-
-    _jitsiMeet.join(options);
+  Future<void> _joinMeeting() async {
+    final Uri url = Uri.parse("https://meet.jit.si/$_roomName");
+    try {
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        throw 'Could not launch $url';
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to open voice lounge: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -30,7 +30,7 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(
+        title: const Text(
           'INNVIKTA LOUNGE',
           style: TextStyle(
             color: Colors.black,
@@ -41,6 +41,10 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: Center(
         child: Padding(
@@ -63,14 +67,14 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
                     ),
                   ],
                 ),
-                child: Icon(
+                child: const Icon(
                   Icons.mic,
                   size: 80,
                   color: Colors.orange,
                 ),
               ),
-              SizedBox(height: 40),
-              Text(
+              const SizedBox(height: 40),
+              const Text(
                 'Global Voice Chat Room',
                 style: TextStyle(
                   fontSize: 24,
@@ -78,7 +82,7 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
                   color: Colors.black87,
                 ),
               ),
-              SizedBox(height: 12),
+              const SizedBox(height: 12),
               Text(
                 'Connect with other security professionals and learn in real-time. Completely free, unlimited, and P2P-powered voice calls.',
                 textAlign: TextAlign.center,
@@ -88,7 +92,7 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
                   height: 1.5,
                 ),
               ),
-              SizedBox(height: 48),
+              const SizedBox(height: 48),
               SizedBox(
                 width: double.infinity,
                 height: 56,
@@ -103,7 +107,7 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
+                    children: const [
                       Icon(Icons.headset_mic, color: Colors.white),
                       SizedBox(width: 12),
                       Text(
