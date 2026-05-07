@@ -128,21 +128,24 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> with TickerProvid
     return Scaffold(
       backgroundColor: _discordDarkBg,
       appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.discord, color: _discordBlurple, size: 28),
-            const SizedBox(width: 10),
-            const Text(
-              'CYBERSHIELD CHAT',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                letterSpacing: 1.1,
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.discord, color: _discordBlurple, size: 28),
+              const SizedBox(width: 10),
+              const Text(
+                'CYBERSHIELD LOUNGE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  letterSpacing: 1.1,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         backgroundColor: _discordChannelBg,
         elevation: 4,
