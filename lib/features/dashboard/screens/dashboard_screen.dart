@@ -28,6 +28,51 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     Future.microtask(() => ref.read(authProvider.notifier).fetchProfile());
   }
 
+  Widget _buildDrawerGridItem({
+    required BuildContext context,
+    required String label,
+    required IconData icon,
+    required Color color,
+    required int index,
+  }) {
+    final isSelected = _currentIndex == index;
+    return InkWell(
+      onTap: () {
+        Navigator.pop(context);
+        setState(() => _currentIndex = index);
+      },
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withOpacity(0.15) : color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? color : color.withOpacity(0.12),
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.spaceGrotesk(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: isSelected ? color : CyberTheme.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<Widget> subViews = [
@@ -88,47 +133,65 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
               );
             })(),
-            ListTile(
-              leading: const Icon(Icons.feed_outlined, color: CyberTheme.textPrimary),
-              title: Text('Feed', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 13)),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() => _currentIndex = 0);
-              },
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text(
+                'DASHBOARD NAVIGATION',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.grey.shade500,
+                  letterSpacing: 1.2,
+                ),
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.forum_outlined, color: CyberTheme.textPrimary),
-              title: Text('Forums Explorer', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 13)),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() => _currentIndex = 1);
-              },
+            Expanded(
+              child: GridView.count(
+                crossAxisCount: 2,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.15,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildDrawerGridItem(
+                    context: context,
+                    label: 'Feed',
+                    icon: Icons.feed_outlined,
+                    color: CyberTheme.primary,
+                    index: 0,
+                  ),
+                  _buildDrawerGridItem(
+                    context: context,
+                    label: 'Forums',
+                    icon: Icons.forum_outlined,
+                    color: Colors.purple.shade600,
+                    index: 1,
+                  ),
+                  _buildDrawerGridItem(
+                    context: context,
+                    label: 'Arcade',
+                    icon: Icons.sports_esports_outlined,
+                    color: Colors.blue.shade600,
+                    index: 2,
+                  ),
+                  _buildDrawerGridItem(
+                    context: context,
+                    label: 'Leaderboard',
+                    icon: Icons.leaderboard_outlined,
+                    color: Colors.amber.shade800,
+                    index: 3,
+                  ),
+                  _buildDrawerGridItem(
+                    context: context,
+                    label: 'Profile',
+                    icon: Icons.person_outline_rounded,
+                    color: Colors.teal.shade600,
+                    index: 4,
+                  ),
+                ],
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.sports_esports_outlined, color: CyberTheme.textPrimary),
-              title: Text('Cyber Arcade', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 13)),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() => _currentIndex = 2);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.leaderboard_outlined, color: CyberTheme.textPrimary),
-              title: Text('Global Leaderboard', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 13)),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() => _currentIndex = 3);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.person_outline_rounded, color: CyberTheme.textPrimary),
-              title: Text('Agent Profile', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 13)),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() => _currentIndex = 4);
-              },
-            ),
-            const Spacer(),
             const Divider(color: Color(0xFFEFEDED), height: 1),
             ListTile(
               leading: const Icon(Icons.logout_rounded, color: CyberTheme.danger),
