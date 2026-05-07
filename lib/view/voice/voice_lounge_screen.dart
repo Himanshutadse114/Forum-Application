@@ -8,26 +8,17 @@ class VoiceLoungeScreen extends StatefulWidget {
 
 class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
   final JitsiMeet _jitsiMeet = JitsiMeet();
-  final String _roomName = "Innvikta_Secure_Voice_Lounge_Room";
+  final String _roomName = "InnviktaVoiceLounge";
 
   void _joinMeeting() {
     var options = JitsiMeetConferenceOptions(
-      serverURL: "https://meet.jit.si",
       room: _roomName,
       configOverrides: {
-        "startWithAudioMuted": false,
         "startWithVideoMuted": true,
         "prejoinPageEnabled": false,
-        "videoMuted": true,
-      },
-      featureFlags: {
-        "unsaferoomwarning.enabled": false,
-        "chat.enabled": false,
-        "video-share.enabled": false,
-        "invite.enabled": false,
       },
       userInfo: JitsiMeetUserInfo(
-        displayName: "Innvikta User",
+        displayName: "Innvikta Member",
       ),
     );
 
