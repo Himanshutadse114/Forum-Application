@@ -7,6 +7,7 @@ import 'package:sneakers_app/utils/constants.dart';
 import 'package:sneakers_app/view/bag/bag_screen.dart';
 import 'package:sneakers_app/view/home/home_screen.dart';
 import 'package:sneakers_app/view/profile/profile_screen.dart';
+import 'package:sneakers_app/view/voice/voice_lounge_screen.dart';
 
 class MainNavigator extends StatefulWidget {
   @override
@@ -20,6 +21,7 @@ class _MainNavigatorState extends State<MainNavigator> {
   List<Widget> _screen = [
     HomeScreen(),
     MyBagScreen(),
+    VoiceLoungeScreen(),
     Profile(),
   ];
 
@@ -62,6 +64,9 @@ class _MainNavigatorState extends State<MainNavigator> {
           ),
           CustomNavigationBarItem(
             icon: Icon(CupertinoIcons.shield),
+          ),
+          CustomNavigationBarItem(
+            icon: Icon(CupertinoIcons.phone),
           ),
           CustomNavigationBarItem(
             icon: Icon(CupertinoIcons.person),
