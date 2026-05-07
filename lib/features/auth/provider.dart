@@ -87,7 +87,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return false;
       }
     } catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: 'Network connection failed.');
+      String msg = 'Network connection failed.';
+      if (e is DioException) {
+        msg = (e.response?.data is Map) ? (e.response?.data['message'] ?? e.message) : (e.message ?? e.toString());
+      } else {
+        msg = e.toString();
+      }
+      state = state.copyWith(isLoading: false, errorMessage: msg);
       return false;
     }
   }
@@ -109,7 +115,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return false;
       }
     } catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: 'Registration failed or user already exists.');
+      String msg = 'Registration failed.';
+      if (e is DioException) {
+        msg = (e.response?.data is Map) ? (e.response?.data['message'] ?? e.message) : (e.message ?? e.toString());
+      } else {
+        msg = e.toString();
+      }
+      state = state.copyWith(isLoading: false, errorMessage: msg);
       return false;
     }
   }
