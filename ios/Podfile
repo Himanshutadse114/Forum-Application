@@ -3,7 +3,7 @@ platform :ios, '13.0'
 install! 'cocoapods', :disable_input_output_paths => true
 
 def flutter_install_all_ios_pods(chunks)
-  keep_path = File.expand_path(File.join('..', 'Flutter', 'podhelper.rb'), chunks)
+  keep_path = File.expand_path(File.join('Flutter', 'podhelper.rb'), chunks)
   require keep_path
   flutter_ios_podfile_setup
 end
