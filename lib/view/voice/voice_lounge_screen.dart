@@ -84,7 +84,7 @@ class _VoiceLoungeScreenState extends State<VoiceLoungeScreen> {
                 style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black80,
+                  color: Colors.black87,
                 ),
               ),
               SizedBox(height: 12),
