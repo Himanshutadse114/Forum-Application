@@ -3260,7 +3260,7 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
           ]),
           const SizedBox(height: 12),
           Container(
-            height: (MediaQuery.of(context).size.height - 240).clamp(360.0, 580.0),
+            height: 330,
             decoration: BoxDecoration(
               color: const Color(0xFF0A1628),
               borderRadius: BorderRadius.circular(24),
