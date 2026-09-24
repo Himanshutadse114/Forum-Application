@@ -1,0 +1,9 @@
+# Enable Authorization header passing to PHP
+CGIPassAuth On
+
+# Fallback for older Apache versions if CGIPassAuth fails
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>

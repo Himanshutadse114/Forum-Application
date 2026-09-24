@@ -64,8 +64,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
       });
 
       if (response.data['status'] == 'success') {
-        final token = response.data['token'];
-        final user = response.data['user'];
+        final token = response.data['data']['token'];
+        final user = response.data['data']['user'];
 
         await HiveBoxHelper.saveAuthData(
           token: token,
@@ -133,19 +133,64 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final response = await _apiClient.dio.get('/auth/profile.php');
       if (response.data['status'] == 'success') {
         final user = response.data['data'];
-        await HiveBoxHelper.updateRepAndRank(
-          int.parse(user['reputation_points'].toString()),
-          user['rank'].toString(),
-        );
-        state = state.copyWith(userProfile: Map<String, dynamic>.from(user));
+        
+        final localRep = HiveBoxHelper.getReputation() ?? 0;
+        final serverRep = int.tryParse(user['reputation_points'].toString()) ?? 0;
+        
+        if (serverRep > localRep) {
+          // Server has a higher score (e.g., loaded from another source), update local
+          await HiveBoxHelper.updateRepAndRank(
+            serverRep,
+            user['rank'].toString(),
+          );
+          state = state.copyWith(userProfile: Map<String, dynamic>.from(user));
+        } else if (localRep > serverRep) {
+          // Local has a higher score! Preserve the local score, and auto-sync the difference to the server
+          final diff = localRep - serverRep;
+          try {
+            await _apiClient.dio.post('/auth/update_reputation.php', data: {
+              'reputation_points': diff,
+              'action': 'add',
+            });
+          } catch (_) {
+            try {
+              await _apiClient.dio.put('/auth/profile.php', data: {
+                'reputation_points': diff,
+              });
+            } catch (_) {}
+          }
+          
+          final updatedUser = Map<String, dynamic>.from(user);
+          updatedUser['reputation_points'] = localRep;
+          updatedUser['rank'] = HiveBoxHelper.getRank() ?? user['rank'].toString();
+          state = state.copyWith(userProfile: updatedUser);
+        } else {
+          // Already perfectly in sync
+          state = state.copyWith(userProfile: Map<String, dynamic>.from(user));
+        }
       }
     } catch (_) {}
   }
 
   Future<bool> addReputationPoints(int points) async {
     if (!HiveBoxHelper.isLoggedIn()) return false;
+    
+    // 1. Instantly update local reputation points and rank inside Hive so it NEVER resets
+    final currentRep = HiveBoxHelper.getReputation() ?? 0;
+    final newRep = currentRep + points;
+    String newRank = HiveBoxHelper.getRank() ?? 'Recruit';
+    if (newRep >= 1000) {
+      newRank = 'Cyber Commander';
+    } else if (newRep >= 500) {
+      newRank = 'Security Expert';
+    } else if (newRep >= 250) {
+      newRank = 'Security Analyst';
+    }
+    await HiveBoxHelper.updateRepAndRank(newRep, newRank);
+    _loadCachedUser();
+
+    // 2. Fire-and-forget network updates
     try {
-      // Try PUT first (update reputation on profile endpoint)
       final response = await _apiClient.dio.post('/auth/update_reputation.php', data: {
         'reputation_points': points,
         'action': 'add',
@@ -154,7 +199,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await fetchProfile();
         return true;
       }
-      // Fallback: try PUT on profile.php
       final response2 = await _apiClient.dio.put('/auth/profile.php', data: {
         'reputation_points': points,
       });
@@ -163,7 +207,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return true;
       }
     } catch (_) {
-      // Last resort: try POST to profile.php
       try {
         final response3 = await _apiClient.dio.post('/auth/profile.php', data: {
           'reputation_points': points,
@@ -175,11 +218,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         }
       } catch (_) {}
     }
-    // Even if API call fails, update local reputation so UI reflects score
-    final currentRep = HiveBoxHelper.getReputation() ?? 0;
-    await HiveBoxHelper.updateRepAndRank(currentRep + points, HiveBoxHelper.getRank() ?? 'Recruit');
-    _loadCachedUser();
-    return true; // Return true so user gets feedback that XP was recorded locally
+    return true;
   }
 
   Future<bool> updateProfile(String username, String avatar) async {
@@ -204,6 +243,48 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> logout() async {
     await HiveBoxHelper.clear();
     state = AuthState(isAuthenticated: false);
+  }
+
+  Future<bool> submitGameScore(String gameId, int score) async {
+    if (!state.isAuthenticated) return false;
+    final userId = HiveBoxHelper.getUserId() ?? 999;
+    await HiveBoxHelper.saveGameScore(userId, gameId, score);
+    
+    // 1. Instantly update local cache
+    final currentRep = HiveBoxHelper.getReputation() ?? 0;
+    final newRep = currentRep + score;
+    String newRank = HiveBoxHelper.getRank() ?? 'Recruit';
+    if (newRep >= 1000) {
+      newRank = 'Cyber Commander';
+    } else if (newRep >= 500) {
+      newRank = 'Security Expert';
+    } else if (newRep >= 250) {
+      newRank = 'Security Analyst';
+    }
+    await HiveBoxHelper.updateRepAndRank(newRep, newRank);
+    _loadCachedUser();
+
+    // 2. Update backend database
+    try {
+      final response = await _apiClient.dio.post('/users/submit_score.php', data: {
+        'user_id': userId,
+        'game_id': gameId,
+        'score': score,
+      });
+      
+      print('Score Submission Response: ${response.data}');
+      
+      if (response.data['status'] == 'success') {
+        await fetchProfile();
+        return true;
+      } else {
+        print('Server returned error: ${response.data['message']}');
+        return false;
+      }
+    } catch (e) {
+      print('Error submitting score to server: $e');
+      return false;
+    }
   }
 }
 

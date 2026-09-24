@@ -44,3 +44,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Native/Gradle build output
+/android/app/build/
+/android/app/.cxx/
+/android/build/
+
+# Secrets (keep .env.example files)
+.env
+!.env.example

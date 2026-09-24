@@ -1,0 +1,11 @@
+<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'>
+<title>Scotch Bonnet Pepper</title>
+<g stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+  <!-- stem -->
+  <path d="M30 12 C30 8 32 6 32 6 C32 6 34 8 34 12" fill="#2f7a32"/>
+  <!-- body -->
+  <path d="M22 22 C22 16 27 12 32 12 C37 12 42 16 42 22 C46 26 48 30 48 36 C48 44 41 50 32 54 C23 50 16 44 16 36 C16 30 18 26 22 22 Z"
+        fill="#e32626" />
+  <!-- highlight -->
+  <path d="M26 24 C24 27 23 30 23 34" fill="#f76f6f" stroke="none" />
+</g></svg>

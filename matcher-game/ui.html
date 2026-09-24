@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Kitchen Pair Rush - Play</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "error-container": "#fb5151",
+                        "secondary-container": "#ffc3bd",
+                        "surface-container-low": "#f0f1f1",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-bright": "#f6f6f6",
+                        "primary-fixed": "#fe7e4f",
+                        "primary": "#a03a0f",
+                        "error-dim": "#9f0519",
+                        "on-surface-variant": "#5a5c5c",
+                        "on-primary": "#ffefeb",
+                        "tertiary-container": "#f19dfe",
+                        "surface-container-high": "#e1e3e3",
+                        "on-error-container": "#570008",
+                        "on-primary-container": "#491300",
+                        "inverse-primary": "#fe7e4f",
+                        "outline": "#767777",
+                        "on-secondary-fixed-variant": "#912d29",
+                        "surface-tint": "#a03a0f",
+                        "surface-container-highest": "#dbdddd",
+                        "secondary-fixed-dim": "#ffafa8",
+                        "on-tertiary-fixed-variant": "#681f79",
+                        "on-secondary-fixed": "#6a1010",
+                        "secondary-fixed": "#ffc3bd",
+                        "surface": "#f6f6f6",
+                        "on-secondary-container": "#852421",
+                        "on-secondary": "#ffefed",
+                        "tertiary": "#863c96",
+                        "on-primary-fixed-variant": "#591800",
+                        "on-surface": "#2d2f2f",
+                        "surface-variant": "#dbdddd",
+                        "inverse-on-surface": "#9c9d9d",
+                        "primary-fixed-dim": "#ed7244",
+                        "on-tertiary-container": "#5e136f",
+                        "primary-container": "#fe7e4f",
+                        "secondary": "#a03833",
+                        "tertiary-fixed-dim": "#e290ef",
+                        "error": "#b31b25",
+                        "background": "#f6f6f6",
+                        "secondary-dim": "#902c28",
+                        "tertiary-fixed": "#f19dfe",
+                        "on-background": "#2d2f2f",
+                        "on-error": "#ffefee",
+                        "inverse-surface": "#0c0f0f",
+                        "on-tertiary-fixed": "#40004f",
+                        "on-tertiary": "#ffeefc",
+                        "on-primary-fixed": "#020000",
+                        "surface-dim": "#d3d5d5",
+                        "outline-variant": "#acadad",
+                        "tertiary-dim": "#793089",
+                        "surface-container": "#e7e8e8",
+                        "primary-dim": "#902e02"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Plus Jakarta Sans"],
+                        "display": ["Plus Jakarta Sans"],
+                        "body": ["Plus Jakarta Sans"],
+                        "label": ["Plus Jakarta Sans"]
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+
+        .bouncy-hover:hover {
+            transform: scale(1.05);
+        }
+
+        .bouncy-active:active {
+            transform: scale(0.95);
+        }
+    </style>
+    <style>
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+
+<body
+    class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container min-h-screen overflow-hidden">
+    <!-- Top Navigation Bar -->
+    <header
+        class="fixed top-0 w-full z-50 flex justify-between items-center px-8 py-4 bg-stone-50/80 dark:bg-stone-950/80 backdrop-blur-xl rounded-b-[2.5rem] shadow-[0_20px_50px_rgba(254,126,79,0.08)]">
+        <div class="flex items-center gap-4">
+            <div
+                class="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center text-orange-600 shadow-sm">
+                <span class="material-symbols-outlined">menu</span>
+            </div>
+            <h1 class="text-2xl font-black italic tracking-tighter text-orange-600 dark:text-orange-500 font-headline">
+                Kitchen Pair Rush</h1>
+        </div>
+        <div
+            class="flex items-center gap-3 bg-surface-container-lowest px-6 py-2 rounded-full shadow-sm border border-outline-variant/10">
+            <span class="font-bold text-orange-600">❤️ 3</span>
+        </div>
+    </header>
+    <main class="pt-24 pb-32 px-6 h-screen flex flex-col items-center max-w-lg mx-auto">
+        <!-- Game Stats Section -->
+        <div class="w-full flex flex-col gap-6 mb-8">
+            <div class="flex justify-between items-end">
+                <div>
+                    <p class="text-on-surface-variant font-bold tracking-widest uppercase text-[10px]">Current Score</p>
+                    <h2 class="text-4xl font-extrabold tracking-tighter text-on-surface">1,240 <span
+                            class="text-primary text-xl">PTS</span></h2>
+                </div>
+                <div class="text-right">
+                    <p class="text-on-surface-variant font-bold tracking-widest uppercase text-[10px]">Level 14</p>
+                    <p class="text-xl font-extrabold text-on-surface">Sous Chef</p>
+                </div>
+            </div>
+            <!-- Progress Bar -->
+            <div class="w-full h-4 bg-surface-container-highest rounded-full overflow-hidden p-1 shadow-inner">
+                <div class="h-full bg-gradient-to-r from-primary to-primary-container rounded-full relative overflow-hidden"
+                    style="width: 65%;">
+                    <div
+                        class="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:20px_20px]">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Main Game Area -->
+        <div class="flex-1 w-full relative grid grid-cols-2 gap-4 h-full mb-8">
+            <!-- Left Lane -->
+            <div
+                class="h-full bg-surface-container-low rounded-xl relative flex flex-col items-center overflow-hidden border border-white/50">
+                <div class="absolute top-20 flex flex-col gap-12 items-center">
+                    <div
+                        class="w-16 h-16 rounded-2xl bg-surface-container-lowest shadow-md flex items-center justify-center transform -rotate-12 transition-all hover:scale-110">
+                        <span class="material-symbols-outlined text-4xl text-primary"
+                            style="font-variation-settings: 'FILL' 1;">restaurant</span>
+                    </div>
+                    <div
+                        class="w-16 h-16 rounded-2xl bg-surface-container-lowest shadow-md flex items-center justify-center transform rotate-6 transition-all hover:scale-110">
+                        <span class="material-symbols-outlined text-4xl text-primary"
+                            style="font-variation-settings: 'FILL' 1;">nutrition</span>
+                    </div>
+                    <div
+                        class="w-16 h-16 rounded-2xl bg-surface-container-lowest shadow-md flex items-center justify-center transform -rotate-6 transition-all hover:scale-110 border-4 border-primary-container/20">
+                        <span class="material-symbols-outlined text-4xl text-primary"
+                            style="font-variation-settings: 'FILL' 1;">skillet</span>
+                    </div>
+                </div>
+            </div>
+            <!-- Right Lane -->
+            <div
+                class="h-full bg-surface-container-low rounded-xl relative flex flex-col items-center overflow-hidden border border-white/50">
+                <div class="absolute top-4 flex flex-col gap-12 items-center">
+                    <div
+                        class="w-16 h-16 rounded-2xl bg-surface-container-lowest shadow-md flex items-center justify-center transform rotate-12 transition-all hover:scale-110">
+                        <span class="material-symbols-outlined text-4xl text-primary"
+                            style="font-variation-settings: 'FILL' 1;">kitchen</span>
+                    </div>
+                    <div
+                        class="w-16 h-16 rounded-2xl bg-surface-container-lowest shadow-md flex items-center justify-center transform -rotate-6 transition-all hover:scale-110">
+                        <span class="material-symbols-outlined text-4xl text-primary"
+                            style="font-variation-settings: 'FILL' 1;">bakery_dining</span>
+                    </div>
+                    <div
+                        class="w-16 h-16 rounded-2xl bg-surface-container-lowest shadow-md flex items-center justify-center transform rotate-6 border-4 border-primary-container/20 transition-all hover:scale-110">
+                        <span class="material-symbols-outlined text-4xl text-primary"
+                            style="font-variation-settings: 'FILL' 1;">skillet</span>
+                    </div>
+                </div>
+            </div>
+            <!-- Center Hit Window -->
+            <div
+                class="absolute top-1/2 left-0 right-0 h-24 -translate-y-1/2 flex items-center justify-center pointer-events-none z-10">
+                <div
+                    class="w-[110%] h-full bg-primary-container/10 border-y-4 border-primary-container/40 backdrop-blur-[2px] flex items-center justify-between px-4 relative">
+                    <!-- Laser Glow -->
+                    <div
+                        class="absolute inset-0 bg-gradient-to-r from-transparent via-primary-container/5 to-transparent">
+                    </div>
+                    <span
+                        class="material-symbols-outlined text-primary-container opacity-50 scale-150">arrow_forward</span>
+                    <span
+                        class="material-symbols-outlined text-primary-container opacity-50 scale-150">arrow_back</span>
+                </div>
+            </div>
+        </div>
+        <!-- Match Button -->
+        <div class="w-full relative z-20 flex justify-center pb-8">
+            <button
+                class="group relative w-32 h-32 rounded-full bg-gradient-to-b from-primary-container to-primary shadow-[0_20px_40px_rgba(160,58,15,0.4)] flex items-center justify-center transform transition-all active:scale-90 bouncy-active hover:scale-105">
+                <div
+                    class="absolute inset-2 border-4 border-white/20 rounded-full border-dashed animate-spin-[20s] linear infinite">
+                </div>
+                <div class="text-white flex flex-col items-center">
+                    <span class="material-symbols-outlined text-5xl mb-[-4px]"
+                        style="font-variation-settings: 'FILL' 1;">vibration</span>
+                    <span class="font-black text-xs uppercase tracking-[0.2em]">Match</span>
+                </div>
+            </button>
+        </div>
+    </main>
+    <!-- Bottom Navigation Bar -->
+    <nav
+        class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-8 pt-4 bg-stone-50/90 dark:bg-stone-950/90 backdrop-blur-md rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.04)]">
+        <!-- Play Tab (Active) -->
+        <div
+            class="flex flex-col items-center justify-center bg-orange-500 dark:bg-orange-600 text-white rounded-full px-6 py-2 scale-110 shadow-lg shadow-orange-500/40 transition-transform active:scale-90">
+            <span class="material-symbols-outlined">play_circle</span>
+            <span class="text-[10px] font-bold uppercase tracking-widest mt-1">Play</span>
+        </div>
+        <!-- Pantry Tab -->
+        <div
+            class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-4 py-2 hover:text-orange-500 transition-colors active:scale-90">
+            <span class="material-symbols-outlined">inventory_2</span>
+            <span class="text-[10px] font-bold uppercase tracking-widest mt-1">Pantry</span>
+        </div>
+        <!-- Shop Tab -->
+        <div
+            class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-4 py-2 hover:text-orange-500 transition-colors active:scale-90">
+            <span class="material-symbols-outlined">shopping_bag</span>
+            <span class="text-[10px] font-bold uppercase tracking-widest mt-1">Shop</span>
+        </div>
+        <!-- Rank Tab -->
+        <div
+            class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-4 py-2 hover:text-orange-500 transition-colors active:scale-90">
+            <span class="material-symbols-outlined">leaderboard</span>
+            <span class="text-[10px] font-bold uppercase tracking-widest mt-1">Rank</span>
+        </div>
+    </nav>
+    <!-- Visual Accents (Background Decor) -->
+    <div class="fixed top-40 -left-10 opacity-10 -rotate-12 pointer-events-none">
+        <span class="material-symbols-outlined text-[200px] text-primary">lunch_dining</span>
+    </div>
+    <div class="fixed bottom-40 -right-20 opacity-10 rotate-12 pointer-events-none">
+        <span class="material-symbols-outlined text-[200px] text-primary">local_pizza</span>
+    </div>
+</body>
+
+</html>

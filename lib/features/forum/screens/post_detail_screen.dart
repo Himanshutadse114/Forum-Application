@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:cybershield_forum/core/theme.dart';
 import 'package:cybershield_forum/core/hive_box.dart';
 import 'package:cybershield_forum/features/forum/provider.dart';
@@ -301,15 +302,8 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                       ),
                       const SizedBox(height: 20),
 
-                      // Main Briefing Body Text
-                      Text(
-                        post.content,
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          color: CyberTheme.textSecondary,
-                          height: 1.6,
-                        ),
-                      ),
+                      // Main Briefing Body Text (with clickable link detection)
+                      _PostContentWidget(content: post.content),
                       const SizedBox(height: 24),
 
                       // Screen 3 "Key Takeaways" Checklists
@@ -665,6 +659,111 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─── Smart content widget: splits text and renders URLs as buttons ────────────
+class _PostContentWidget extends StatelessWidget {
+  final String content;
+  const _PostContentWidget({required this.content});
+
+  static final _urlRegex = RegExp(
+    r'https?://[^\s\n]+',
+    caseSensitive: false,
+  );
+
+  Future<void> _openUrl(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open: $url')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = _urlRegex.allMatches(content).toList();
+    if (matches.isEmpty) {
+      // No URL — plain text
+      return Text(
+        content,
+        style: GoogleFonts.inter(fontSize: 15, color: CyberTheme.textSecondary, height: 1.6),
+      );
+    }
+
+    // Split content into text parts and URL parts
+    final widgets = <Widget>[];
+    int cursor = 0;
+
+    for (final match in matches) {
+      // Text before URL
+      if (match.start > cursor) {
+        final textBefore = content.substring(cursor, match.start).trim();
+        if (textBefore.isNotEmpty) {
+          widgets.add(Text(
+            textBefore,
+            style: GoogleFonts.inter(fontSize: 15, color: CyberTheme.textSecondary, height: 1.6),
+          ));
+          widgets.add(const SizedBox(height: 12));
+        }
+      }
+
+      // URL as a tappable button
+      final url = match.group(0)!;
+      widgets.add(
+        GestureDetector(
+          onTap: () => _openUrl(context, url),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: CyberTheme.primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: CyberTheme.primary.withOpacity(0.25)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.open_in_new_rounded, size: 16, color: CyberTheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Read Full Article',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: CyberTheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      widgets.add(const SizedBox(height: 12));
+      cursor = match.end;
+    }
+
+    // Remaining text after last URL
+    if (cursor < content.length) {
+      final remaining = content.substring(cursor).trim();
+      if (remaining.isNotEmpty) {
+        widgets.add(Text(
+          remaining,
+          style: GoogleFonts.inter(fontSize: 15, color: CyberTheme.textSecondary, height: 1.6),
+        ));
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: widgets,
     );
   }
 }

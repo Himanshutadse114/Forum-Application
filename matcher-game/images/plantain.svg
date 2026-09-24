@@ -1,0 +1,10 @@
+<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'>
+<title>Ripe Plantain</title>
+<g stroke='#000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'>
+<!-- crescent body -->
+<path d='M12 20 C16 34 26 44 40 48 C46 50 51 50 54 48 C51 54 44 58 36 58 C24 56 16 50 10 38 C8 32 8 25 10 20 Z'
+fill='#f7d64a' />
+<!-- highlight on inner curve -->
+<path d='M16 24 C20 34 27 40 34 43' fill='#ffe985' stroke='none' />
+</g>
+</svg>

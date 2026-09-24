@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyber-security-pac-man</title>
+    <script>
+      // Define SCORM APIs for e-learning packages
+      window.API = {
+        LMSInitialize: function() { return "true"; },
+        LMSFinish: function() { return "true"; },
+        LMSGetValue: function(key) { return ""; },
+        LMSSetValue: function(key, value) {
+          if (key.indexOf('score.raw') !== -1 || key.indexOf('score') !== -1) {
+            var score = parseInt(value);
+            if (!isNaN(score) && window.FlutterGameChannel) {
+              window.FlutterGameChannel.postMessage(JSON.stringify({ action: "submitScore", score: score }));
+            }
+          }
+          return "true";
+        },
+        LMSCommit: function() { return "true"; },
+        LMSGetLastError: function() { return 0; },
+        LMSGetErrorString: function() { return ""; },
+        LMSGetDiagnostic: function() { return ""; }
+      };
+      window.API_1484_11 = {
+        Initialize: function() { return "true"; },
+        Terminate: function() { return "true"; },
+        GetValue: function(key) { return ""; },
+        SetValue: function(key, value) {
+          if (key.indexOf('score.raw') !== -1 || key.indexOf('score.scaled') !== -1 || key.indexOf('score') !== -1) {
+            var score = parseFloat(value);
+            if (key.indexOf('score.scaled') !== -1) score = score * 100;
+            if (!isNaN(score) && window.FlutterGameChannel) {
+              window.FlutterGameChannel.postMessage(JSON.stringify({ action: "submitScore", score: Math.round(score) }));
+            }
+          }
+          return "true";
+        },
+        Commit: function() { return "true"; },
+        GetLastError: function() { return 0; },
+        GetErrorString: function() { return ""; },
+        GetDiagnostic: function() { return ""; }
+      };
+      // Add window postMessage listener
+      window.addEventListener("message", function(event) {
+        try {
+          var data = event.data;
+          if (typeof data === "string") {
+            data = JSON.parse(data);
+          }
+          var score = data.score || data.scoreRaw || data.value;
+          if (score !== undefined) {
+            var parsed = parseInt(score);
+            if (!isNaN(parsed) && window.FlutterGameChannel) {
+              window.FlutterGameChannel.postMessage(JSON.stringify({ action: "submitScore", score: parsed }));
+            }
+          }
+        } catch(e) {}
+      });
+    </script>
+    <script defer src="./assets/index-BF5fybTF.js"></script>
+    <link rel="stylesheet" href="./assets/index-CiNLYlbg.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

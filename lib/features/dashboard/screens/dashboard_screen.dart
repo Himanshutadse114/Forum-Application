@@ -1,14 +1,22 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:installed_apps/installed_apps.dart';
+import 'package:installed_apps/app_info.dart';
 import 'package:cybershield_forum/core/theme.dart';
 import 'package:cybershield_forum/core/hive_box.dart';
+import 'package:cybershield_forum/core/api_client.dart';
 import 'package:cybershield_forum/features/auth/provider.dart';
 import 'package:cybershield_forum/features/forum/provider.dart';
-import 'package:cybershield_forum/features/reports/provider.dart';
 import 'package:cybershield_forum/features/forum/screens/post_detail_screen.dart';
+import 'package:cybershield_forum/features/anti_fraud/services/local_apk_scanner.dart';
+import 'package:cybershield_forum/features/anti_fraud/services/gemini_service.dart';
+import 'package:hive/hive.dart';
+import 'package:cybershield_forum/core/notification_helper.dart';
 
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -24,11 +32,166 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   void initState() {
     super.initState();
+
     // Synchronize latest user profile stats on launch
-    Future.microtask(() => ref.read(authProvider.notifier).fetchProfile());
+    Future.microtask(() {
+      ref.read(authProvider.notifier).fetchProfile();
+      _checkAndTriggerDailyAutoPost();
+    });
   }
 
-  Widget _buildDrawerGridItem({
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  Future<void> _checkAndTriggerDailyAutoPost() async {
+    final lastPost = HiveBoxHelper.getSecurityForumAutoPostTime();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    
+    // 24 hours in milliseconds = 86,400,000
+    if (lastPost == 0 || (now - lastPost) >= 86400000) {
+      try {
+        final geminiService = GeminiService();
+        final articles = await geminiService.fetchFraudAndDeviceNews(deviceBrand: 'Android');
+        if (articles.isNotEmpty) {
+          final currentPosts = HiveBoxHelper.getSecurityForumPosts();
+          
+          // Find first article that hasn't been posted yet
+          Map<String, dynamic>? newArticle;
+          for (final art in articles) {
+            final t = art['title']?.toString() ?? '';
+            if (t.isNotEmpty && !currentPosts.any((p) => p['title'] == t)) {
+              newArticle = art;
+              break;
+            }
+          }
+          
+          if (newArticle != null) {
+            final title = newArticle['title']?.toString() ?? '';
+            final body = newArticle['body']?.toString() ?? '';
+            final date = newArticle['date']?.toString() ?? 'Recent';
+            final source = newArticle['source']?.toString() ?? 'Security Alert';
+            final url = newArticle['url']?.toString() ?? '';
+            
+            final post = {
+              'id': DateTime.now().millisecondsSinceEpoch,
+              'user_id': 1,
+              'category_id': 9999,
+              'title': title,
+              'content': 'Date: $date\nSource: $source\n\n$body\n\nRead full article here: $url',
+              'is_anonymous': 0,
+              'likes_count': 0,
+              'comments_count': 0,
+              'author_name': 'cybershield_admin',
+              'author_avatar': 'admin.png',
+              'author_rank': 'Cyber Security Commander',
+              'category_name': 'Security Advisories & Fraud Alerts',
+              'created_at': DateTime.now().toIso8601String(),
+            };
+            
+            await HiveBoxHelper.addSecurityForumPost(post);
+            
+            // Also post to remote MySQL database
+            try {
+              await ApiClient().dio.post('/posts/create.php', data: {
+                'category_id': 9999,
+                'title': title,
+                'content': 'Date: $date\nSource: $source\n\n$body\n\nRead full article here: $url',
+                'is_anonymous': 0,
+              });
+            } catch (_) {}
+
+            await HiveBoxHelper.saveSecurityForumAutoPostTime(now);
+            
+            // Invalidate Riverpod posts provider to reload Category 9999 posts
+            ref.invalidate(postsProvider(9999));
+            ref.invalidate(postsProvider(null));
+            
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: CyberTheme.primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  content: Row(
+                    children: [
+                      const Icon(Icons.security_rounded, color: Colors.white, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Daily Security Alert Published!',
+                              style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                            ),
+                            Text(
+                              title,
+                              style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withOpacity(0.9)),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  action: SnackBarAction(
+                    label: 'VIEW',
+                    textColor: Colors.white,
+                    onPressed: () {
+                      context.push('/forum/9999/Security%20Advisories%20%26%20Fraud%20Alerts');
+                    },
+                  ),
+                  duration: const Duration(seconds: 6),
+                ),
+              );
+            }
+          }
+        }
+      } catch (e) {
+        print('Error running auto post: $e');
+      }
+    }
+  }
+
+  void _checkNewPostsAndNotify(List<Post> posts) async {
+    if (posts.isEmpty) return;
+
+    int maxId = 0;
+    for (final post in posts) {
+      if (post.id > maxId) {
+        maxId = post.id;
+      }
+    }
+
+    final box = Hive.box(HiveBoxHelper.authBoxName);
+    final previousMax = box.get('max_post_id_seen', defaultValue: 0) as int;
+
+    if (previousMax == 0) {
+      await box.put('max_post_id_seen', maxId);
+      return;
+    }
+
+    if (maxId > previousMax) {
+      final newPosts = posts.where((p) => p.id > previousMax).toList();
+      newPosts.sort((a, b) => a.id.compareTo(b.id));
+
+      for (final post in newPosts) {
+        await NotificationHelper().showNotification(
+          id: post.id,
+          title: 'CyberShield Alert: ${post.title}',
+          body: post.content.length > 120 
+              ? '${post.content.substring(0, 117)}...' 
+              : post.content,
+        );
+      }
+      await box.put('max_post_id_seen', maxId);
+    }
+  }
+
+  Widget _buildDrawerListItem({
     required BuildContext context,
     required String label,
     required IconData icon,
@@ -36,45 +199,40 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     required int index,
   }) {
     final isSelected = _currentIndex == index;
-    return InkWell(
-      onTap: () {
-        Navigator.pop(context);
-        setState(() => _currentIndex = index);
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.15) : color.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isSelected ? color : color.withOpacity(0.12),
-            width: 1.5,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: isSelected ? color.withOpacity(0.1) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        leading: Icon(icon, color: isSelected ? color : CyberTheme.textSecondary),
+        title: Text(
+          label,
+          style: GoogleFonts.spaceGrotesk(
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+            fontSize: 14,
+            color: isSelected ? color : CyberTheme.textPrimary,
           ),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 10),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.spaceGrotesk(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-                color: isSelected ? color : CyberTheme.textPrimary,
-              ),
-            ),
-          ],
-        ),
+        onTap: () {
+          Navigator.pop(context);
+          setState(() => _currentIndex = index);
+        },
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<List<Post>>>(postsProvider(null), (previous, next) {
+      final posts = next.value;
+      if (posts != null && posts.isNotEmpty) {
+        _checkNewPostsAndNotify(posts);
+      }
+    });
+
     final List<Widget> subViews = [
       _HomeFeedView(onNavigate: (index) => setState(() => _currentIndex = index)),
       const _ThreatCenterView(),
@@ -146,49 +304,82 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
             ),
             Expanded(
-              child: GridView.count(
-                crossAxisCount: 2,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 1.15,
-                physics: const NeverScrollableScrollPhysics(),
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 children: [
-                  _buildDrawerGridItem(
+                  _buildDrawerListItem(
                     context: context,
                     label: 'Feed',
                     icon: Icons.feed_outlined,
                     color: CyberTheme.primary,
                     index: 0,
                   ),
-                  _buildDrawerGridItem(
+                  _buildDrawerListItem(
                     context: context,
                     label: 'Forums',
                     icon: Icons.forum_outlined,
                     color: Colors.purple.shade600,
                     index: 1,
                   ),
-                  _buildDrawerGridItem(
+                  _buildDrawerListItem(
                     context: context,
                     label: 'Arcade',
                     icon: Icons.sports_esports_outlined,
                     color: Colors.blue.shade600,
                     index: 2,
                   ),
-                  _buildDrawerGridItem(
+                  _buildDrawerListItem(
                     context: context,
                     label: 'Leaderboard',
                     icon: Icons.leaderboard_outlined,
                     color: Colors.amber.shade800,
                     index: 3,
                   ),
-                  _buildDrawerGridItem(
+                  _buildDrawerListItem(
                     context: context,
                     label: 'Profile',
                     icon: Icons.person_outline_rounded,
                     color: Colors.teal.shade600,
                     index: 4,
                   ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    child: Divider(color: Color(0xFFEFEDED)),
+                  ),
+                  if (ref.watch(authProvider).userProfile?['role'] == 'super_admin')
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: ListTile(
+                        leading: const Icon(Icons.security, color: CyberTheme.danger),
+                        title: Text('Super Admin', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 14, color: CyberTheme.danger)),
+                        onTap: () {
+                          Navigator.pop(context);
+                          context.push('/super-admin');
+                        },
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: CyberTheme.danger, width: 1),
+                        ),
+                        tileColor: CyberTheme.danger.withOpacity(0.05),
+                      ),
+                    ),
+                  if (ref.watch(authProvider).userProfile?['role'] == 'admin' || ref.watch(authProvider).userProfile?['role'] == 'super_admin')
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: ListTile(
+                        leading: const Icon(Icons.analytics, color: Colors.orange),
+                        title: Text('Analytics', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.orange)),
+                        onTap: () {
+                          Navigator.pop(context);
+                          context.push('/admin-analytics');
+                        },
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: const BorderSide(color: Colors.orange, width: 1),
+                        ),
+                        tileColor: Colors.orange.withOpacity(0.05),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -250,26 +441,32 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         centerTitle: _currentIndex != 0,
         actions: [
           if (_currentIndex == 0 || _currentIndex == 1) ...[
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.notifications_outlined, color: CyberTheme.textPrimary),
-                  onPressed: () => _showNotificationsDialog(context),
-                ),
-                Positioned(
-                  right: 12,
-                  top: 12,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: CyberTheme.primary,
-                      shape: BoxShape.circle,
+            Consumer(
+              builder: (context, ref, child) {
+                final unreadCount = ref.watch(unreadNotificationsCountProvider);
+                return Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.notifications_outlined, color: CyberTheme.textPrimary),
+                      onPressed: () => _showNotificationsDialog(context),
                     ),
-                  ),
-                ),
-              ],
+                    if (unreadCount > 0)
+                      Positioned(
+                        right: 12,
+                        top: 12,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: CyberTheme.primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ] else if (_currentIndex == 4) ...[
             IconButton(
@@ -370,6 +567,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   void _showNotificationsDialog(BuildContext context) {
+    // Mark notifications as read in database on dialog open
+    Future.microtask(() {
+      ref.read(forumOperationsProvider.notifier).markNotificationsAsRead();
+    });
+
     showDialog(
       context: context,
       builder: (context) {
@@ -380,51 +582,139 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ),
           child: Padding(
             padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
+            child: Consumer(
+              builder: (context, ref, child) {
+                final notificationsAsync = ref.watch(notificationsProvider);
+                final postsAsync = ref.watch(postsProvider(9999));
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.notifications_active_outlined, color: CyberTheme.primary, size: 24),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Notifications',
-                      style: GoogleFonts.spaceGrotesk(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                        color: CyberTheme.textPrimary,
+                    Row(
+                      children: [
+                        const Icon(Icons.notifications_active_outlined, color: CyberTheme.primary, size: 24),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Notifications',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                            color: CyberTheme.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 320),
+                      child: SingleChildScrollView(
+                        child: notificationsAsync.when(
+                          data: (notifs) {
+                            final List<Widget> items = [];
+                            
+                            // 1. Add real live notifications from database (comments, likes, rank achievements, report status updates)
+                            if (notifs.isNotEmpty) {
+                              for (final notif in notifs) {
+                                items.add(_notifItem(
+                                  notif.title,
+                                  notif.message,
+                                  notif.type,
+                                ));
+                              }
+                            }
+                            
+                            // 2. Add real live security advisories if present
+                            final posts = postsAsync.value ?? [];
+                            if (posts.isNotEmpty) {
+                              final sorted = List<Post>.from(posts)
+                                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                              final recent = sorted.take(2).toList();
+                              for (final post in recent) {
+                                items.add(_notifItem(
+                                  post.title,
+                                  'New advisory from ${post.authorName}. Tap to read full details.',
+                                  'advisory',
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    context.push('/post-detail/${post.id}');
+                                  },
+                                ));
+                              }
+                            }
+                            
+                            // 3. Fallback to generic example items ONLY when both feeds are empty
+                            if (items.isEmpty) {
+                              items.add(_notifItem(
+                                'Security Clearance Upgraded',
+                                'Your rank has been elevated to WhiteHat Trainee. Keep active in community reporting!',
+                                'achievement',
+                              ));
+                              items.add(_notifItem(
+                                'New Threat Report Recorded',
+                                'Scam alert "Delivery Fake URL" successfully written to community ledger.',
+                                'report_status',
+                              ));
+                            }
+                            
+                            return Column(children: items);
+                          },
+                          loading: () => const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24.0),
+                              child: CircularProgressIndicator(color: CyberTheme.primary),
+                            ),
+                          ),
+                          error: (_, __) {
+                            final List<Widget> items = [];
+                            final posts = postsAsync.value ?? [];
+                            if (posts.isNotEmpty) {
+                              final sorted = List<Post>.from(posts)
+                                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                              final recent = sorted.take(2).toList();
+                              for (final post in recent) {
+                                items.add(_notifItem(
+                                  post.title,
+                                  'New advisory from ${post.authorName}. Tap to read full details.',
+                                  'advisory',
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    context.push('/post-detail/${post.id}');
+                                  },
+                                ));
+                              }
+                            }
+                            items.add(_notifItem(
+                              'Security Clearance Upgraded',
+                              'Your rank has been elevated to WhiteHat Trainee. Keep active in community reporting!',
+                              'achievement',
+                            ));
+                            items.add(_notifItem(
+                              'New Threat Report Recorded',
+                              'Scam alert "Delivery Fake URL" successfully written to community ledger.',
+                              'report_status',
+                            ));
+                            return Column(children: items);
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: CyberTheme.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
+                      ),
+                      child: Text(
+                        'DISMISS',
+                        style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                     ),
                   ],
-                ),
-                const SizedBox(height: 16),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 300),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        _notifItem('Security Clearance Upgraded', 'Your rank has been elevated to WhiteHat Trainee. Keep active in community reporting!', 'achievement'),
-                        _notifItem('New Threat Report Recorded', 'Scam alert "Delivery Fake URL" successfully written to community ledger.', 'report_status'),
-                        _notifItem('Reputation Point Received', 'Your recent post "Ransomware Defense Checklist" received +15 reputation XP.', 'like'),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: CyberTheme.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
-                  ),
-                  child: Text(
-                    'DISMISS',
-                    style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
         );
@@ -432,7 +722,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _notifItem(String title, String body, String type) {
+  Widget _notifItem(String title, String body, String type, {VoidCallback? onTap}) {
     IconData icon = Icons.info_outline_rounded;
     Color color = CyberTheme.primary;
     if (type == 'achievement') {
@@ -441,52 +731,67 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     } else if (type == 'report_status') {
       icon = Icons.gavel_rounded;
       color = Colors.deepOrange;
+    } else if (type == 'advisory') {
+      icon = Icons.security_rounded;
+      color = CyberTheme.primary;
+    } else if (type == 'like') {
+      icon = Icons.favorite_outline_rounded;
+      color = Colors.pink;
+    } else if (type == 'comment') {
+      icon = Icons.comment_outlined;
+      color = Colors.blue;
     }
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CyberTheme.background,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEFEDED)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: color, size: 18),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: CyberTheme.background,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFEFEDED)),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.spaceGrotesk(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: CyberTheme.textPrimary,
-                  ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  body,
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: CyberTheme.textSecondary,
-                    height: 1.4,
-                  ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: CyberTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      body,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        color: CyberTheme.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -501,11 +806,15 @@ class _HomeFeedView extends ConsumerStatefulWidget {
   ConsumerState<_HomeFeedView> createState() => _HomeFeedViewState();
 }
 
-class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
+class _HomeFeedViewState extends ConsumerState<_HomeFeedView>
+    with SingleTickerProviderStateMixin {
   int _selectedTab = 0;
   final List<String> _tabs = ['For You', 'Following', 'Trending', 'Latest'];
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+
+  late final AnimationController _floatController;
+  late final Animation<double> _floatAnimation;
 
   @override
   void initState() {
@@ -515,11 +824,20 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
         _searchQuery = _searchController.text;
       });
     });
+    // Floating bubble animation for Sentinel Coach card
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+    _floatAnimation = Tween<double>(begin: -5.0, end: 5.0).animate(
+      CurvedAnimation(parent: _floatController, curve: Curves.easeInOut),
+    );
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _floatController.dispose();
     super.dispose();
   }
 
@@ -590,6 +908,23 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
 
   @override
   Widget build(BuildContext context) {
+    final scanResults = HiveBoxHelper.getScanResults();
+    final savedAuditCount = scanResults.values.where((v) => v['isOffline'] != true).length;
+    final counterAuditCount = HiveBoxHelper.getScanCount('app');
+    final auditedApps = savedAuditCount > counterAuditCount ? savedAuditCount : counterAuditCount;
+    final totalApps = scanResults.length;
+
+    final smsScanCount = HiveBoxHelper.getScanCount('sms');
+    final emailScanCount = HiveBoxHelper.getScanCount('email');
+    final linkScanCount = HiveBoxHelper.getScanCount('link');
+
+    // Count completed tasks (0–4)
+    int completedTasks = 0;
+    if (auditedApps > 0) completedTasks++;
+    if (smsScanCount > 0) completedTasks++;
+    if (emailScanCount > 0) completedTasks++;
+    if (linkScanCount > 0) completedTasks++;
+
     return Scaffold(
       backgroundColor: CyberTheme.background,
       body: SingleChildScrollView(
@@ -598,104 +933,259 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // PREMIUM INNVIKTA HERO SECTION WITH HERO IMAGE
+            // PREMIUM HERO SECTION - LMS & SECURITY SCANNER
             Container(
               decoration: BoxDecoration(
-                color: const Color(0xFFFFF9F5), // Soft peach/cream background matching the design system
                 borderRadius: BorderRadius.circular(28),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFFFD4B2).withOpacity(0.45),
-                    blurRadius: 14,
-                    offset: const Offset(6, 6),
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 12,
+                    offset: const Offset(4, 6),
                   ),
-                  const BoxShadow(
-                    color: Colors.white,
-                    blurRadius: 14,
-                    offset: Offset(-6, -6),
+                  BoxShadow(
+                    color: Colors.white.withOpacity(0.6),
+                    blurRadius: 12,
+                    offset: const Offset(-4, -6),
                   ),
                 ],
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(28),
-                child: Stack(
-                  clipBehavior: Clip.antiAlias,
-                  children: [
-                    Positioned(
-                      right: -55,
-                      top: -5,
-                      bottom: -5,
-                      child: Image.asset(
-                        'assets/images/innvikta_hero.png',
-                        height: 85,
-                        fit: BoxFit.contain,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.55),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.45),
+                        width: 1.5,
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 24, top: 24, bottom: 24, right: 105.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                    child: Stack(
+                      clipBehavior: Clip.antiAlias,
                       children: [
-                        Text(
-                          'Connect. Share.',
-                          style: GoogleFonts.spaceGrotesk(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: CyberTheme.textPrimary,
-                            height: 1.15,
-                            letterSpacing: -0.5,
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          bottom: 0,
+                          width: 130,
+                          child: CustomPaint(
+                            painter: _ShieldNetworkPainter(),
                           ),
                         ),
-                        Text(
-                          'Learn. Grow.',
-                          style: GoogleFonts.spaceGrotesk(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: CyberTheme.primary,
-                            height: 1.15,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Join a community of thinkers and level up every day.',
-                          style: GoogleFonts.inter(
-                            fontSize: 12.5,
-                            color: CyberTheme.textSecondary,
-                            fontWeight: FontWeight.w500,
-                            height: 1.4,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        ElevatedButton(
-                          onPressed: () {
-                            if (widget.onNavigate != null) {
-                              widget.onNavigate!(1); // Switch to Forums Explorer
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: CyberTheme.primary,
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
-                            elevation: 1,
-                          ),
-                          child: Text(
-                            'Explore Now',
-                            style: GoogleFonts.spaceGrotesk(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12.5,
-                              color: Colors.white,
-                            ),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 20, top: 20, bottom: 20, right: 118.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: CyberTheme.primary.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'LMS + Scanner',
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: CyberTheme.primary,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Learn. Detect.',
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: CyberTheme.textPrimary,
+                                  height: 1.15,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                              Text(
+                                'Stay Protected.',
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: CyberTheme.primary,
+                                  height: 1.15,
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'Train with modules, scan threats,\nand defend your digital world.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  color: CyberTheme.textSecondary,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.4,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      if (widget.onNavigate != null) {
+                                        widget.onNavigate!(1);
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: CyberTheme.primary,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
+                                      elevation: 1,
+                                    ),
+                                    child: Text(
+                                      'Start Learning',
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 0), // spacer kept for Wrap
+                                  OutlinedButton(
+                                    onPressed: () {
+                                      showModalBottomSheet(
+                                        context: context,
+                                        backgroundColor: Colors.transparent,
+                                        builder: (context) => Container(
+                                          decoration: const BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.only(
+                                              topLeft: Radius.circular(28),
+                                              topRight: Radius.circular(28),
+                                            ),
+                                          ),
+                                          padding: const EdgeInsets.all(24),
+                                          child: SafeArea(
+                                            top: false,
+                                            child: SingleChildScrollView(
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                                children: [
+                                                  Center(
+                                                    child: Container(
+                                                      width: 40,
+                                                      height: 4,
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.grey.shade300,
+                                                        borderRadius: BorderRadius.circular(2),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 14),
+                                                  Text(
+                                                    'Quick Scan',
+                                                    style: GoogleFonts.spaceGrotesk(
+                                                      fontSize: 18,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: CyberTheme.textPrimary,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    'Pick a scanner to start threat detection.',
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 13,
+                                                      color: CyberTheme.textSecondary,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                  const SizedBox(height: 14),
+                                                  _heroBannerScannerTile(
+                                                    context: context,
+                                                    icon: Icons.link_rounded,
+                                                    label: 'Link Scanner',
+                                                    sub: 'Scan URLs for threats',
+                                                    onTap: () {
+                                                      Navigator.pop(context);
+                                                      context.push('/link-scanner');
+                                                    },
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  _heroBannerScannerTile(
+                                                    context: context,
+                                                    icon: Icons.sms_outlined,
+                                                    label: 'SMS Scanner',
+                                                    sub: 'Detect phishing texts',
+                                                    onTap: () {
+                                                      Navigator.pop(context);
+                                                      context.push('/sms-scanner');
+                                                    },
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  _heroBannerScannerTile(
+                                                    context: context,
+                                                    icon: Icons.mark_as_unread_outlined,
+                                                    label: 'Email Scanner',
+                                                    sub: 'Audit EML headers & links',
+                                                    onTap: () {
+                                                      Navigator.pop(context);
+                                                      context.push('/eml-scanner');
+                                                    },
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  _heroBannerScannerTile(
+                                                    context: context,
+                                                    icon: Icons.gavel_rounded,
+                                                    label: 'App Auditor',
+                                                    sub: 'Audit breach history & safety news',
+                                                    onTap: () {
+                                                      Navigator.pop(context);
+                                                      context.push('/apk-scanner?tab=0');
+                                                    },
+                                                  ),
+                                                  const SizedBox(height: 14),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    style: OutlinedButton.styleFrom(
+                                      side: BorderSide(color: CyberTheme.primary.withOpacity(0.5)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99)),
+                                    ),
+                                    child: Text(
+                                      'Scan Now',
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                        color: CyberTheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
-          ),
             const SizedBox(height: 12),
             // CAROUSEL PAGE DOTS
             Row(
@@ -731,6 +1221,136 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
             ),
             const SizedBox(height: 24),
 
+            // SENTINEL COACH TEASER CARD — animated floating bubble
+            GestureDetector(
+              onTap: () => context.push('/sentinel-coach'),
+              child: AnimatedBuilder(
+                animation: _floatAnimation,
+                builder: (context, child) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFEFEDED)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: CyberTheme.primary.withOpacity(0.08 + (_floatAnimation.value.abs() / 5) * 0.06),
+                          blurRadius: 18 + _floatAnimation.value.abs(),
+                          offset: Offset(0, 4 + _floatAnimation.value * 0.5),
+                          spreadRadius: 0,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        // Floating animated shield bubble
+                        Transform.translate(
+                          offset: Offset(0, _floatAnimation.value),
+                          child: Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                colors: [
+                                  CyberTheme.primary,
+                                  CyberTheme.primary.withOpacity(0.75),
+                                ],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: CyberTheme.primary.withOpacity(0.35 + (_floatAnimation.value.abs() / 5) * 0.2),
+                                  blurRadius: 14 + _floatAnimation.value.abs() * 1.5,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.security_rounded,
+                              color: Colors.white,
+                              size: 26,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'Sentinel AI Coach',
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: CyberTheme.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  // Live pulse dot
+                                  TweenAnimationBuilder<double>(
+                                    tween: Tween(begin: 0.5, end: 1.0),
+                                    duration: const Duration(milliseconds: 900),
+                                    curve: Curves.easeInOut,
+                                    builder: (_, v, __) => Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.withOpacity(v),
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.green.withOpacity(v * 0.5),
+                                            blurRadius: 6,
+                                            spreadRadius: 1,
+                                          )
+                                        ],
+                                      ),
+                                    ),
+                                    onEnd: () => setState(() {}),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                completedTasks == 4
+                                    ? 'All security tasks completed ✓'
+                                    : '$completedTasks of 4 security tasks completed',
+                                style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
+                                  color: completedTasks == 4
+                                      ? const Color(0xFF16A34A)
+                                      : CyberTheme.primary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                auditedApps > 0
+                                    ? '$auditedApps app(s) audited · Tap to view full briefing'
+                                    : 'Tap to start your security check',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  color: CyberTheme.textSecondary,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: CyberTheme.textMuted),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 24),
+
             // QUICK ACTIONS HEADING
             Text(
               'Quick Actions',
@@ -741,34 +1361,297 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
               ),
             ),
             const SizedBox(height: 14),
-            // FOUR ROW ITEM CARDS
-            Row(
+            // 2x2 GRID OF QUICK ACTIONS
+            Column(
               children: [
-                _buildQuickActionCard(
-                  title: 'Forums',
-                  subtitle: 'Discuss',
-                  icon: Icons.forum_outlined,
-                  onTap: () {
-                    if (widget.onNavigate != null) widget.onNavigate!(1);
-                  },
+                Row(
+                  children: [
+                    _buildQuickActionCard(
+                      title: 'Scanner',
+                      subtitle: 'Scan SMS, Email & Audit Apps',
+                      icon: Icons.shield_outlined,
+                      onTap: () {
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: Colors.transparent,
+                          builder: (context) => Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(28),
+                                topRight: Radius.circular(28),
+                              ),
+                            ),
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Center(
+                                  child: Container(
+                                    width: 40,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade300,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                Text(
+                                  'Choose Scan Vector',
+                                  style: GoogleFonts.spaceGrotesk(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: CyberTheme.textPrimary,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Select the communication type to check for phishing indicator patterns.',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    color: CyberTheme.textSecondary,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                Column(
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              context.push('/sms-scanner');
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(16),
+                                              decoration: BoxDecoration(
+                                                color: CyberTheme.background,
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(color: const Color(0xFFEFEDED)),
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.all(10),
+                                                    decoration: BoxDecoration(
+                                                      color: CyberTheme.primary.withOpacity(0.08),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(Icons.sms_outlined, color: CyberTheme.primary, size: 24),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  Text(
+                                                    'SMS Inbox',
+                                                    style: GoogleFonts.spaceGrotesk(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 14,
+                                                      color: CyberTheme.textPrimary,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    'Heuristic text scans',
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 10,
+                                                      color: CyberTheme.textMuted,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              context.push('/eml-scanner');
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(16),
+                                              decoration: BoxDecoration(
+                                                color: CyberTheme.background,
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(color: const Color(0xFFEFEDED)),
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.all(10),
+                                                    decoration: BoxDecoration(
+                                                      color: CyberTheme.primary.withOpacity(0.08),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(Icons.mark_as_unread_outlined, color: CyberTheme.primary, size: 24),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  Text(
+                                                    'EML Email File',
+                                                    style: GoogleFonts.spaceGrotesk(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 14,
+                                                      color: CyberTheme.textPrimary,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    'Deep header audits',
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 10,
+                                                      color: CyberTheme.textMuted,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              context.push('/apk-scanner?tab=0');
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(16),
+                                              decoration: BoxDecoration(
+                                                color: CyberTheme.background,
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(color: const Color(0xFFEFEDED)),
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.all(10),
+                                                    decoration: BoxDecoration(
+                                                      color: CyberTheme.primary.withOpacity(0.08),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(Icons.smartphone_rounded, color: CyberTheme.primary, size: 24),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  Text(
+                                                    'Inbuilt Apps',
+                                                    style: GoogleFonts.spaceGrotesk(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 14,
+                                                      color: CyberTheme.textPrimary,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    'Audit installed apps',
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 10,
+                                                      color: CyberTheme.textMuted,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              context.push('/apk-scanner?tab=1');
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(16),
+                                              decoration: BoxDecoration(
+                                                color: CyberTheme.background,
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(color: const Color(0xFFEFEDED)),
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  Container(
+                                                    padding: const EdgeInsets.all(10),
+                                                    decoration: BoxDecoration(
+                                                      color: CyberTheme.primary.withOpacity(0.08),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(Icons.search_rounded, color: CyberTheme.primary, size: 24),
+                                                  ),
+                                                  const SizedBox(height: 12),
+                                                  Text(
+                                                    'Search App',
+                                                    style: GoogleFonts.spaceGrotesk(
+                                                      fontWeight: FontWeight.bold,
+                                                      fontSize: 14,
+                                                      color: CyberTheme.textPrimary,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    'Audit reputation by name',
+                                                    style: GoogleFonts.inter(
+                                                      fontSize: 10,
+                                                      color: CyberTheme.textMuted,
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildQuickActionCard(
+                      title: 'Link Scanner',
+                      subtitle: 'Scan URLs for threats',
+                      icon: Icons.link_rounded,
+                      onTap: () => context.push('/link-scanner'),
+                    ),
+                  ],
                 ),
-                _buildQuickActionCard(
-                  title: 'Blogs',
-                  subtitle: 'Read',
-                  icon: Icons.menu_book_outlined,
-                  onTap: () {
-                    if (widget.onNavigate != null) widget.onNavigate!(1);
-                  },
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _buildQuickActionCard(
+                      title: 'Forums',
+                      subtitle: 'Community Discussions',
+                      icon: Icons.forum_outlined,
+                      onTap: () {
+                        if (widget.onNavigate != null) widget.onNavigate!(1);
+                      },
+                    ),
+                    _buildQuickActionCard(
+                      title: 'Arcade Games',
+                      subtitle: 'Play Cyber Arcade',
+                      icon: Icons.sports_esports_outlined,
+                      onTap: () {
+                        if (widget.onNavigate != null) widget.onNavigate!(2);
+                      },
+                    ),
+                  ],
                 ),
-                _buildQuickActionCard(
-                  title: 'Games',
-                  subtitle: 'Play',
-                  icon: Icons.sports_esports_outlined,
-                  onTap: () {
-                    if (widget.onNavigate != null) widget.onNavigate!(2);
-                  },
-                ),
-
               ],
             ),
             const SizedBox(height: 28),
@@ -810,30 +1693,24 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
     );
   }
 
+  String _formatTimeAgo(DateTime dateTime) {
+    final difference = DateTime.now().difference(dateTime);
+    if (difference.inDays >= 7) {
+      return '${(difference.inDays / 7).floor()}w ago';
+    } else if (difference.inDays >= 1) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours >= 1) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes >= 1) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
+  }
+
   List<Widget> _buildFilteredDiscussions() {
-    final List<Map<String, dynamic>> allDiscussions = [
-      {
-        'title': "What's the biggest cybersecurity threat in 2024?",
-        'author': 'CyberNinja',
-        'time': '2h ago',
-        'comments': 32,
-        'icon': Icons.shield_outlined,
-      },
-      {
-        'title': "Best tools for network monitoring?",
-        'author': 'SecureMind',
-        'time': '5h ago',
-        'comments': 18,
-        'icon': Icons.analytics_outlined,
-      },
-      {
-        'title': "How do you stay ahead of phishing attacks?",
-        'author': 'ThreatHunter',
-        'time': '1d ago',
-        'comments': 27,
-        'icon': Icons.gavel_rounded,
-      },
-    ];
+    final postsAsync = ref.watch(postsProvider(null));
+    final categoriesAsync = ref.watch(categoriesProvider);
 
     final List<Map<String, dynamic>> allPeople = [
       {
@@ -864,186 +1741,240 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
 
     final query = _searchQuery.toLowerCase();
 
-    final filteredDiscussions = allDiscussions.where((item) {
-      final title = item['title'].toString().toLowerCase();
-      final author = item['author'].toString().toLowerCase();
-      return title.contains(query) || author.contains(query);
-    }).toList();
-
     final filteredPeople = allPeople.where((item) {
       final name = item['name'].toString().toLowerCase();
       final role = item['role'].toString().toLowerCase();
       return name.contains(query) || role.contains(query);
     }).toList();
 
-    final List<Widget> results = [];
-
-    if (query.isNotEmpty && filteredPeople.isNotEmpty) {
-      results.add(
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Matching Agents & People',
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: CyberTheme.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 95,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: filteredPeople.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
-                  itemBuilder: (context, idx) {
-                    final p = filteredPeople[idx];
-                    return Container(
-                      width: 155,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFEFEDED)),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: const BoxDecoration(shape: BoxShape.circle),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(99),
-                                  child: Image.network(
-                                    'https://api.dicebear.com/7.x/adventurer/png?seed=${p['avatar']}&backgroundColor=ffd5b4',
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      p['name'] as String,
-                                      style: GoogleFonts.spaceGrotesk(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.bold,
-                                        color: CyberTheme.textPrimary,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    Text(
-                                      p['role'] as String,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 9,
-                                        color: CyberTheme.textSecondary,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                p['pts'] as String,
-                                style: GoogleFonts.spaceGrotesk(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: CyberTheme.primary,
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: CyberTheme.primary.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'Follow',
-                                  style: GoogleFonts.spaceGrotesk(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
-                                    color: CyberTheme.primary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              if (filteredDiscussions.isNotEmpty) ...[
-                Text(
-                  'Matching Discussions',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: CyberTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-              ],
-            ],
+    return postsAsync.when(
+      loading: () => [
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 24.0),
+          child: Center(
+            child: CircularProgressIndicator(color: CyberTheme.primary),
           ),
         ),
-      );
-    }
-
-    if (filteredDiscussions.isEmpty && filteredPeople.isEmpty) {
-      results.add(
+      ],
+      error: (error, stackTrace) => [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 24.0),
           child: Center(
             child: Text(
-              'No matching discussions or people found.',
+              'Failed to load discussions: $error',
               style: GoogleFonts.inter(
                 fontSize: 13,
-                color: CyberTheme.textSecondary,
+                color: Colors.redAccent,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ),
         ),
-      );
-      return results;
-    }
-
-    results.addAll(
-      filteredDiscussions.map((item) {
-        return _buildDiscussionItem(
-          title: item['title'] as String,
-          author: item['author'] as String,
-          time: item['time'] as String,
-          comments: item['comments'] as int,
-          icon: item['icon'] as IconData,
-          onTap: () {},
+      ],
+      data: (posts) {
+        // Map category name to icon
+        final categoryIcons = categoriesAsync.maybeWhen(
+          data: (categories) => {
+            for (final cat in categories) cat.name.toLowerCase(): cat.icon,
+          },
+          orElse: () => <String, String>{},
         );
-      }),
-    );
 
-    return results;
+        // Filter posts by query
+        final filteredDiscussions = posts.where((post) {
+          final title = post.title.toLowerCase();
+          final author = (post.isAnonymous ? 'cyberguardian' : post.authorName).toLowerCase();
+          return title.contains(query) || author.contains(query);
+        }).toList();
+
+        // If query is empty, sort by popularity/engagement (likes + comments) to show trending
+        List<Post> displayPosts = filteredDiscussions;
+        if (query.isEmpty) {
+          displayPosts = List<Post>.from(filteredDiscussions);
+          displayPosts.sort((a, b) {
+            final activityA = a.likesCount + a.commentsCount;
+            final activityB = b.likesCount + b.commentsCount;
+            int cmp = activityB.compareTo(activityA);
+            if (cmp != 0) return cmp;
+            return b.createdAt.compareTo(a.createdAt); // Latest first as tie-breaker
+          });
+          if (displayPosts.length > 3) {
+            displayPosts = displayPosts.sublist(0, 3);
+          }
+        }
+
+        final List<Widget> results = [];
+
+        if (query.isNotEmpty && filteredPeople.isNotEmpty) {
+          results.add(
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Matching Agents & People',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: CyberTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    height: 95,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: filteredPeople.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      itemBuilder: (context, idx) {
+                        final p = filteredPeople[idx];
+                        return Container(
+                          width: 155,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFEFEDED)),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: const BoxDecoration(shape: BoxShape.circle),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(99),
+                                      child: Image.network(
+                                        'https://api.dicebear.com/7.x/adventurer/png?seed=${p['avatar']}&backgroundColor=ffd5b4',
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          p['name'] as String,
+                                          style: GoogleFonts.spaceGrotesk(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: CyberTheme.textPrimary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        Text(
+                                          p['role'] as String,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 9,
+                                            color: CyberTheme.textSecondary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    p['pts'] as String,
+                                    style: GoogleFonts.spaceGrotesk(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: CyberTheme.primary,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: CyberTheme.primary.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'Follow',
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: CyberTheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (displayPosts.isNotEmpty) ...[
+                    Text(
+                      'Matching Discussions',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: CyberTheme.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }
+
+        if (displayPosts.isEmpty && filteredPeople.isEmpty) {
+          results.add(
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24.0),
+              child: Center(
+                child: Text(
+                  'No matching discussions or people found.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: CyberTheme.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          );
+          return results;
+        }
+
+        results.addAll(
+          displayPosts.map((post) {
+            final iconName = categoryIcons[post.categoryName.toLowerCase()] ?? '';
+            final icon = _getCategoryIcon(iconName);
+            return _buildDiscussionItem(
+              title: post.title,
+              author: post.isAnonymous ? 'CyberGuardian' : post.authorName,
+              time: _formatTimeAgo(post.createdAt),
+              comments: post.commentsCount,
+              icon: icon,
+              onTap: () => context.push('/post-detail/${post.id}'),
+            );
+          }),
+        );
+
+        return results;
+      },
+    );
   }
 
   Widget _buildQuickActionCard({
@@ -1120,81 +2051,155 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
     required IconData icon,
     required VoidCallback onTap,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFE5E7EB),
-            blurRadius: 8,
-            offset: const Offset(4, 4),
-          ),
-          const BoxShadow(
-            color: Colors.white,
-            blurRadius: 8,
-            offset: Offset(-4, -4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: CyberTheme.primary.withOpacity(0.08),
-              shape: BoxShape.circle,
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFE5E7EB),
+              blurRadius: 8,
+              offset: const Offset(4, 4),
             ),
-            child: Icon(icon, color: CyberTheme.primary, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.spaceGrotesk(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13.5,
-                    color: CyberTheme.textPrimary,
-                    height: 1.25,
+            const BoxShadow(
+              color: Colors.white,
+              blurRadius: 8,
+              offset: Offset(-4, -4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: CyberTheme.primary.withOpacity(0.08),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: CyberTheme.primary, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13.5,
+                      color: CyberTheme.textPrimary,
+                      height: 1.25,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
+                  const SizedBox(height: 4),
+                  Text(
+                    'by $author • $time',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: CyberTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Row(
+              children: [
+                const Icon(Icons.chat_bubble_outline_rounded, color: CyberTheme.textMuted, size: 16),
+                const SizedBox(width: 4),
                 Text(
-                  'by $author • $time',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
+                  '$comments',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
                     color: CyberTheme.textSecondary,
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: 12),
-          Row(
-            children: [
-              const Icon(Icons.chat_bubble_outline_rounded, color: CyberTheme.textMuted, size: 16),
-              const SizedBox(width: 4),
-              Text(
-                '$comments',
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.bold,
-                  color: CyberTheme.textSecondary,
-                ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _getCategoryIcon(String iconName) {
+    switch (iconName) {
+      case 'alternate_email': return Icons.alternate_email_rounded;
+      case 'security_update_warning': return Icons.gavel_rounded;
+      case 'gavel': return Icons.gavel_rounded;
+      case 'forum': return Icons.chat_bubble_outline_rounded;
+      case 'fact_check': return Icons.fact_check_outlined;
+      default: return Icons.shield_outlined;
+    }
+  }
+
+  Widget _heroBannerScannerTile({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required String sub,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFEFEDED)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: CyberTheme.primary.withOpacity(0.08),
+                shape: BoxShape.circle,
               ),
-            ],
-          ),
-        ],
+              child: Icon(icon, color: CyberTheme.primary, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13.5,
+                      color: CyberTheme.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    sub,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: CyberTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: CyberTheme.textMuted, size: 20),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildCyberArcadeView() {
+
     if (_gameFinished) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1276,7 +2281,7 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () async {
-              final success = await ref.read(authProvider.notifier).addReputationPoints(_gameScore);
+              final success = await ref.read(authProvider.notifier).submitGameScore(_activeGame!, _gameScore);
               if (success && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -1479,7 +2484,7 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
                 }
               },
               child: Text(
-                _gameRound < 2 ? 'CONTINUE ➔' : 'FINISH TRAINING ➔',
+                _gameRound < 2 ? 'CONTINUE âž”' : 'FINISH TRAINING âž”',
                 style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
               ),
               style: ElevatedButton.styleFrom(
@@ -1648,7 +2653,7 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
                 }
               },
               child: Text(
-                _gameRound < 2 ? 'CONTINUE ➔' : 'FINISH TRAINING ➔',
+                _gameRound < 2 ? 'CONTINUE âž”' : 'FINISH TRAINING âž”',
                 style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
               ),
               style: ElevatedButton.styleFrom(
@@ -1761,7 +2766,7 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
                       ),
                     ),
                     Text(
-                      'LAUNCH MODULE ➔',
+                      'LAUNCH MODULE âž”',
                       style: GoogleFonts.spaceGrotesk(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
@@ -1862,7 +2867,7 @@ class _HomeFeedViewState extends ConsumerState<_HomeFeedView> {
                       ),
                     ),
                     Text(
-                      'LAUNCH MODULE ➔',
+                      'LAUNCH MODULE âž”',
                       style: GoogleFonts.spaceGrotesk(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
@@ -2219,9 +3224,9 @@ class _UserProfileSheetState extends ConsumerState<_UserProfileSheet> {
                           child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
                             _statChip(posts.length.toString(), 'Posts'),
                             Container(width: 1, height: 24, color: const Color(0xFFEFEDED)),
-                            _statChip('—', 'Followers'),
+                            _statChip('â€”', 'Followers'),
                             Container(width: 1, height: 24, color: const Color(0xFFEFEDED)),
-                            _statChip('—', 'XP'),
+                            _statChip('â€”', 'XP'),
                           ]),
                         ),
                         loading: () => const SizedBox.shrink(),
@@ -2658,19 +3663,19 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
       'scenario': 'A hacker is running a dictionary attack. Which password survives?',
       'options': ['password123', 'fluffy2020', 'Tr0ub4dor&3', 'abc123'],
       'correctIndex': 2,
-      'explanation': '"Tr0ub4dor&3" uses mixed case, numbers and symbols — resistant to dictionary attacks.',
+      'explanation': '"Tr0ub4dor&3" uses mixed case, numbers and symbols â€” resistant to dictionary attacks.',
     },
     {
       'scenario': 'You find a login page with NO HTTPS padlock. What do you do?',
       'options': ['Log in quickly', 'Use incognito mode', 'Leave the page immediately', 'Disable cookies'],
       'correctIndex': 2,
-      'explanation': 'Without HTTPS, credentials are transmitted in plaintext — never log in on HTTP pages.',
+      'explanation': 'Without HTTPS, credentials are transmitted in plaintext â€” never log in on HTTP pages.',
     },
     {
       'scenario': 'A pop-up says "Your PC is infected! Call 1-800-SUPPORT NOW!" What is this?',
       'options': ['Legitimate antivirus alert', 'Scareware / Tech Support Scam', 'Windows Defender warning', 'System crash report'],
       'correctIndex': 1,
-      'explanation': 'This is Scareware — a social engineering tactic designed to frighten users into calling fake support lines.',
+      'explanation': 'This is Scareware â€” a social engineering tactic designed to frighten users into calling fake support lines.',
     },
   ];
 
@@ -2726,8 +3731,10 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
   static const List<Map<String, dynamic>> _games = [
     {'id': 'patrol',   'title': 'Phishing\nPatrol',   'subtitle': 'Spot the threat',     'xp': '+10 XP/Rd', 'icon': Icons.radar_rounded,    'g1': Color(0xFFFF6B35), 'g2': Color(0xFFFF8B3D), 'diff': 'MEDIUM'},
     {'id': 'trivia',   'title': 'Cyber\nTrivia',      'subtitle': 'Security quiz',        'xp': '+10 XP/Rd', 'icon': Icons.bolt_rounded,     'g1': Color(0xFF7B2FBE), 'g2': Color(0xFF9B4FDE), 'diff': 'HARD'},
-    {'id': 'flappy',   'title': 'Firewall\nDrone',    'subtitle': 'Dodge data packets',   'xp': '+5 XP/pt',  'icon': Icons.flight_rounded,   'g1': Color(0xFF0EA5E9), 'g2': Color(0xFF38BDF8), 'diff': 'EASY'},
+    {'id': 'flappy',   'title': 'Flying\nShield',     'subtitle': 'Dodge data packets',   'xp': '+5 XP/pt',  'icon': Icons.flight_rounded,   'g1': Color(0xFF0EA5E9), 'g2': Color(0xFF38BDF8), 'diff': 'EASY'},
     {'id': 'password', 'title': 'Password\nCracker',  'subtitle': 'Pick the safe key',    'xp': '+10 XP/Rd', 'icon': Icons.lock_rounded,     'g1': Color(0xFF059669), 'g2': Color(0xFF34D399), 'diff': 'MEDIUM'},
+    {'id': 'cyber_match', 'title': 'Cyber\nMatch',    'subtitle': 'Align security tokens','xp': '+100 XP/Win','icon': Icons.sync_alt_rounded, 'g1': Color(0xFF2563EB), 'g2': Color(0xFF3B82F6), 'diff': 'CHALLENGING'},
+    {'id': 'shield_maze', 'title': 'Shield\nMaze',    'subtitle': 'Pac-Man arcade maze',  'xp': '+10 XP/pt', 'icon': Icons.grid_goldenratio_rounded, 'g1': Color(0xFFE11D48), 'g2': Color(0xFFF43F5E), 'diff': 'MEDIUM'},
   ];
 
   Widget _buildModuleSelection() {
@@ -2749,21 +3756,60 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
             final g = _games[i];
             final c1 = g['g1'] as Color;
             final c2 = g['g2'] as Color;
+
+            final isImageCard = (g['id'] == 'patrol' || g['id'] == 'shield_maze' || g['id'] == 'cyber_match' || g['id'] == 'trivia' || g['id'] == 'password' || g['id'] == 'flappy');
+            String? cardImage;
+            if (g['id'] == 'patrol') cardImage = 'assets/images/phish-petrol.png';
+            if (g['id'] == 'shield_maze') cardImage = 'assets/images/shieldmaze.jpeg';
+            if (g['id'] == 'cyber_match') cardImage = 'assets/images/cyber-match.jpeg';
+            if (g['id'] == 'trivia') cardImage = 'assets/images/cyber-Trivia.jpeg';
+            if (g['id'] == 'password') cardImage = 'assets/images/password-cracker.jpeg';
+            if (g['id'] == 'flappy') cardImage = 'assets/images/flying-shield.jpeg';
+
             return GestureDetector(
-              onTap: () => setState(() {
-                _activeGame = g['id'] as String;
-                _gameRound = 0; _gameScore = 0; _gameFinished = false;
-                _answeredThisRound = false; _selectedAnswerIndex = null;
-                _passwordLevel = 0; _passwordSelected = null; _passwordAnswered = false;
-                _flappyStarted = false; _flappyDead = false;
-              }),
+              onTap: () {
+                if (g['id'] == 'cyber_match') {
+                  context.push('/cyber-match');
+                  return;
+                }
+                if (g['id'] == 'flappy') {
+                  context.push('/firewall-drone');
+                  return;
+                }
+                if (g['id'] == 'shield_maze') {
+                  context.push('/shield-maze');
+                  return;
+                }
+                setState(() {
+                  _activeGame = g['id'] as String;
+                  _gameRound = 0; _gameScore = 0; _gameFinished = false;
+                  _answeredThisRound = false; _selectedAnswerIndex = null;
+                  _passwordLevel = 0; _passwordSelected = null; _passwordAnswered = false;
+                  _flappyStarted = false; _flappyDead = false;
+                });
+              },
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [c1, c2], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  gradient: isImageCard
+                      ? null
+                      : LinearGradient(colors: [c1, c2], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  image: isImageCard && cardImage != null
+                      ? DecorationImage(
+                          image: AssetImage(cardImage),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [BoxShadow(color: c1.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))],
                 ),
                 child: Stack(children: [
+                  if (isImageCard)
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: Colors.black.withOpacity(0.15),
+                      ),
+                    ),
                   Positioned(right: -16, bottom: -16, child: Container(
                     width: 80, height: 80,
                     decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)),
@@ -2771,15 +3817,18 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
                   Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
-                        child: Icon(g['icon'] as IconData, color: Colors.white, size: 22),
-                      ),
-                      const Spacer(),
-                      Text(g['title'] as String, style: GoogleFonts.spaceGrotesk(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white, height: 1.2)),
-                      const SizedBox(height: 4),
-                      Text(g['subtitle'] as String, style: GoogleFonts.inter(fontSize: 10, color: Colors.white.withOpacity(0.8))),
+                      if (!isImageCard) ...[
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                          child: Icon(g['icon'] as IconData, color: Colors.white, size: 22),
+                        ),
+                        const Spacer(),
+                        Text(g['title'] as String, style: GoogleFonts.spaceGrotesk(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white, height: 1.2)),
+                        const SizedBox(height: 4),
+                        Text(g['subtitle'] as String, style: GoogleFonts.inter(fontSize: 10, color: Colors.white.withOpacity(0.8))),
+                      ] else
+                        const Spacer(),
                       const SizedBox(height: 8),
                       Row(children: [
                         Container(
@@ -2876,7 +3925,7 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
           const SizedBox(height: 24),
           ElevatedButton.icon(
             onPressed: () async {
-              final success = await ref.read(authProvider.notifier).addReputationPoints(_gameScore);
+              final success = await ref.read(authProvider.notifier).submitGameScore(_activeGame!, _gameScore);
               if (success && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -3065,7 +4114,7 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
                 }
               },
               child: Text(
-                _gameRound < 2 ? 'CONTINUE ➔' : 'FINISH TRAINING ➔',
+                _gameRound < 2 ? 'CONTINUE âž”' : 'FINISH TRAINING âž”',
                 style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
               ),
               style: ElevatedButton.styleFrom(
@@ -3230,7 +4279,7 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
                 }
               },
               child: Text(
-                _gameRound < 2 ? 'CONTINUE ➔' : 'FINISH TRAINING ➔',
+                _gameRound < 2 ? 'CONTINUE âž”' : 'FINISH TRAINING âž”',
                 style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
               ),
               style: ElevatedButton.styleFrom(
@@ -3366,7 +4415,7 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
             const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: () async {
-                final success = await ref.read(authProvider.notifier).addReputationPoints(_gameScore);
+                final success = await ref.read(authProvider.notifier).submitGameScore(_activeGame!, _gameScore);
                 if (success && mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text('SCORE SUBMITTED! +$_gameScore XP on Leaderboard.', style: GoogleFonts.spaceGrotesk(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -3402,7 +4451,7 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
           const SizedBox(height: 20),
           ElevatedButton.icon(
             onPressed: () async {
-              final success = await ref.read(authProvider.notifier).addReputationPoints(_gameScore);
+              final success = await ref.read(authProvider.notifier).submitGameScore(_activeGame!, _gameScore);
               if (success && mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text('SCORE SUBMITTED! +$_gameScore XP on Leaderboard.', style: GoogleFonts.spaceGrotesk(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -3487,7 +4536,7 @@ class _CyberArcadeViewState extends ConsumerState<_CyberArcadeView> {
               else { _gameFinished = true; }
             }),
             style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18), backgroundColor: const Color(0xFF059669), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(99))),
-            child: Text(_passwordLevel < 2 ? 'NEXT LEVEL ➔' : 'FINISH ➔', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
+            child: Text(_passwordLevel < 2 ? 'NEXT LEVEL âž”' : 'FINISH âž”', style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13)),
           ),
         ],
       ]);
@@ -4441,6 +5490,32 @@ class _LeaderboardViewState extends ConsumerState<_LeaderboardView> {
               final rep = profile?['reputation_points'] ?? 10;
               final userRank = profile?['rank'] ?? 'WhiteHat Trainee';
 
+              // Dynamically calculate user position based on score relative to competitors!
+              int userPosition = 12; // default fallback if below the others
+              if (rep >= 12840) {
+                userPosition = 1;
+              } else if (rep >= 9450) {
+                userPosition = 2;
+              } else if (rep >= 8210) {
+                userPosition = 3;
+              } else if (rep >= 7650) {
+                userPosition = 4;
+              } else if (rep >= 6920) {
+                userPosition = 5;
+              } else if (rep >= 5430) {
+                userPosition = 6;
+              } else if (rep >= 4500) {
+                userPosition = 7;
+              } else if (rep >= 3500) {
+                userPosition = 8;
+              } else if (rep >= 2500) {
+                userPosition = 9;
+              } else if (rep >= 1500) {
+                userPosition = 10;
+              } else if (rep >= 500) {
+                userPosition = 11;
+              }
+
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 decoration: BoxDecoration(
@@ -4462,7 +5537,7 @@ class _LeaderboardViewState extends ConsumerState<_LeaderboardView> {
                 child: Row(
                   children: [
                     Text(
-                      '#12',
+                      '#$userPosition',
                       style: GoogleFonts.spaceGrotesk(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -4667,7 +5742,7 @@ class _AgentProfileView extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0),
                 child: Text(
-                  '${user['email'] ?? ''} • Member of CyberShield community',
+                  '${user['email'] ?? ''} â€¢ Member of CyberShield community',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(
                     fontSize: 12,
@@ -5082,7 +6157,7 @@ class _AgentProfileView extends ConsumerWidget {
                                     style: GoogleFonts.spaceGrotesk(fontSize: 14, fontWeight: FontWeight.bold),
                                   ),
                                   subtitle: Text(
-                                    '${post.categoryName} • ${post.likesCount} likes • ${post.commentsCount} comments',
+                                    '${post.categoryName} â€¢ ${post.likesCount} likes â€¢ ${post.commentsCount} comments',
                                     style: GoogleFonts.inter(fontSize: 11, color: CyberTheme.textMuted),
                                   ),
                                   trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 12),
@@ -5524,4 +6599,126 @@ class _EditProfileSheetState extends ConsumerState<EditProfileSheet> {
       ),
     );
   }
+}
+
+// ===================== CUSTOM PAINTER: Shield + Network Illustration =====================
+class _ShieldNetworkPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+
+    final List<Offset> nodes = [
+      Offset(cx - 45, cy - 52),
+      Offset(cx + 38, cy - 42),
+      Offset(cx - 52, cy + 8),
+      Offset(cx + 50, cy + 10),
+      Offset(cx - 30, cy + 52),
+      Offset(cx + 28, cy + 55),
+      Offset(cx - 10, cy - 68),
+      Offset(cx + 14, cy + 72),
+    ];
+
+    final List<List<int>> edges = [
+      [0, 1], [0, 2], [1, 3], [2, 4],
+      [3, 5], [4, 5], [6, 0], [6, 1],
+      [4, 7], [5, 7],
+    ];
+
+    final linePaintOrange = Paint()
+      ..color = const Color(0xFFFF6B35).withOpacity(0.35)
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final linePaintWhite = Paint()
+      ..color = Colors.white.withOpacity(0.55)
+      ..strokeWidth = 0.9
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < edges.length; i++) {
+      final a = nodes[edges[i][0]];
+      final b = nodes[edges[i][1]];
+      canvas.drawLine(a, b, i.isEven ? linePaintOrange : linePaintWhite);
+    }
+
+    for (int i = 0; i < nodes.length; i++) {
+      canvas.drawCircle(
+        nodes[i],
+        i % 3 == 0 ? 6.5 : 4.5,
+        Paint()
+          ..color = (i.isEven ? const Color(0xFFFF6B35) : Colors.white).withOpacity(0.18)
+          ..style = PaintingStyle.fill,
+      );
+      canvas.drawCircle(
+        nodes[i],
+        i % 3 == 0 ? 3.8 : 2.8,
+        Paint()
+          ..color = i.isEven ? const Color(0xFFFF6B35) : Colors.white.withOpacity(0.85)
+          ..style = PaintingStyle.fill,
+      );
+    }
+
+    const shieldWidth = 46.0;
+    const shieldHeight = 56.0;
+    final sl = cx - shieldWidth / 2;
+    final st = cy - shieldHeight / 2 - 2;
+    final sr = cx + shieldWidth / 2;
+    final sb = st + shieldHeight;
+    final sm = (sl + sr) / 2;
+
+    final shieldPath = Path()
+      ..moveTo(sm, st + 4)
+      ..cubicTo(sm, st, sr, st + 2, sr, st + 12)
+      ..cubicTo(sr, st + 36, sm, sb - 4, sm, sb)
+      ..cubicTo(sm, sb - 4, sl, st + 36, sl, st + 12)
+      ..cubicTo(sl, st + 2, sm, st, sm, st + 4)
+      ..close();
+
+    canvas.drawPath(
+      shieldPath,
+      Paint()
+        ..color = const Color(0xFFFF6B35).withOpacity(0.22)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10)
+        ..style = PaintingStyle.fill,
+    );
+
+    final shieldRect = Rect.fromLTWH(sl, st, shieldWidth, shieldHeight);
+    canvas.drawPath(
+      shieldPath,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFFF8C42), Color(0xFFE84B1A)],
+        ).createShader(shieldRect)
+        ..style = PaintingStyle.fill,
+    );
+
+    canvas.drawPath(
+      shieldPath,
+      Paint()
+        ..color = Colors.white.withOpacity(0.4)
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke,
+    );
+
+    final checkPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 3.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+
+    final checkPath = Path()
+      ..moveTo(cx - 9, cy)
+      ..lineTo(cx - 3, cy + 7)
+      ..lineTo(cx + 10, cy - 7);
+
+    canvas.drawPath(checkPath, checkPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

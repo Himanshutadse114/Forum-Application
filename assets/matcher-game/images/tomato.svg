@@ -1,0 +1,13 @@
+<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'>
+<title>Tomato</title>
+<g stroke='#000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'>
+<!-- leaf cap -->
+<path d='M24 20 L32 16 L40 20 L36 22 L28 22 Z' fill='#2f7a32' />
+<!-- body -->
+<circle cx='32' cy='34' r='14' fill='#e32626' />
+<!-- highlight -->
+<path d='M26 26 C24 28 23 31 23 34' fill='#f76f6f' stroke='none' />
+</g>
+</svg>
+
+

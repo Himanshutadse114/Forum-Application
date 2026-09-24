@@ -3,7 +3,7 @@ import 'package:cybershield_forum/core/hive_box.dart';
 
 class ApiClient {
   // Fully Operational Remote VPS for seamless cloud database integration:
-  static const String baseUrl = 'https://innvikta.co.in/cybershield/api';
+  static const String baseUrl = 'https://innvikta.co.in/cybershield/';
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -21,9 +21,15 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
-          // Dynamically inject token on authenticated endpoints
+          // Remove leading slash to prevent Dio from stripping the subfolder in baseUrl
+          if (options.path.startsWith('/')) {
+            options.path = options.path.substring(1);
+          }
+          
+          // Dynamically inject token on authenticated endpoints as query param (to bypass server stripping headers)
           final token = HiveBoxHelper.getToken();
           if (token != null) {
+            options.queryParameters['token'] = token;
             options.headers['Authorization'] = 'Bearer $token';
           }
           return handler.next(options);

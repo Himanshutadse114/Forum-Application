@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport" />
+  <title>Firewall Drone - Tactical Arcade</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            background: "#fbf9f8",
+            primary: "#ff6b00",
+            primaryDark: "#d35400",
+            charcoal: "#1b1c1c",
+            lime: "#32ff7e",
+            cyan: "#00f0ff",
+            surface: "#ffffff",
+          },
+          fontFamily: {
+            sans: ["Space Grotesk", "sans-serif"],
+            inter: ["Inter", "sans-serif"],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      overflow: hidden;
+    }
+    .arcade-grid {
+      perspective: 1000px;
+      background: linear-gradient(to bottom, #fbf9f8 0%, #efeded 100%);
+    }
+    .grid-floor {
+      transform: rotateX(60deg);
+      background-image: 
+        linear-gradient(rgba(255, 107, 0, 0.08) 2px, transparent 2px),
+        linear-gradient(90deg, rgba(255, 107, 0, 0.08) 2px, transparent 2px);
+      background-size: 60px 60px;
+      width: 200%;
+      height: 200%;
+      position: absolute;
+      bottom: -50%;
+      left: -50%;
+    }
+    .tactile-press {
+      transition: all 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .tactile-press:active {
+      transform: translateY(4px);
+      box-shadow: none !important;
+    }
+    .tactile-press:hover {
+      transform: translateY(-2px);
+    }
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+    }
+    /* Simple CSS glow animations */
+    .glow-orange {
+      box-shadow: 0 0 20px rgba(255, 107, 0, 0.4);
+    }
+    .glow-lime {
+      box-shadow: 0 0 20px rgba(50, 255, 126, 0.4);
+    }
+    /* Flapping visual indicators */
+    @keyframes pulse-fast {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 0.8; }
+    }
+    .wing-glow {
+      animation: pulse-fast 0.2s infinite;
+    }
+  </style>
+</head>
+<body class="bg-background text-charcoal font-sans min-h-screen w-screen overflow-hidden select-none relative">
+
+  <!-- Main Game Canvas Background -->
+  <div class="absolute inset-0 arcade-grid overflow-hidden pointer-events-none z-0">
+    <div id="gridFloor" class="grid-floor"></div>
+  </div>
+
+  <!-- Game HUD (Top Bar) -->
+  <header class="fixed top-0 left-0 w-full z-30 px-4 py-3 flex justify-between items-center glass-panel shadow-md">
+    <div class="flex items-center gap-3">
+      <button onclick="closeGame()" class="w-10 h-10 flex items-center justify-center rounded-full bg-[#efeded] text-charcoal tactile-press font-bold text-lg border border-gray-300">
+        ✕
+      </button>
+      <div class="flex flex-col">
+        <span class="text-[10px] font-bold text-primary uppercase tracking-widest">DRONE SYSTEM</span>
+        <div id="livesContainer" class="flex items-center gap-1 mt-0.5 text-lg">
+          <!-- Hearts injected dynamically -->
+          ❤️ ❤️ ❤️
+        </div>
+      </div>
+    </div>
+    
+    <div class="bg-primary px-4 py-1.5 rounded-full shadow-[0_4px_0_0_#d35400] flex flex-col items-end">
+      <span class="text-[9px] text-white/80 uppercase tracking-widest font-bold">XP SCORE</span>
+      <span id="scoreDisplay" class="text-lg font-bold text-white tracking-wide">000</span>
+    </div>
+  </header>
+
+  <!-- Side Telemetry Panels -->
+  <div class="fixed top-24 left-4 pointer-events-none z-20 hidden md:block">
+    <div class="border-l-4 border-primary pl-3 bg-white/40 p-2 rounded-r-lg glass-panel">
+      <p class="text-[10px] font-bold text-primary">TELEMETRY: ONLINE</p>
+      <p id="commsIndicator" class="text-[9px] text-charcoal font-medium">SYS_FREQ: 5.8 GHz</p>
+    </div>
+  </div>
+
+  <div class="fixed top-24 right-4 pointer-events-none z-20 text-right hidden md:block">
+    <div class="border-r-4 border-lime pr-3 bg-white/40 p-2 rounded-l-lg glass-panel">
+      <p class="text-[10px] font-bold text-lime">SHIELD: ACTIVE</p>
+      <p id="runtimeIndicator" class="text-[9px] text-charcoal font-medium">LINK: 100%</p>
+    </div>
+  </div>
+
+  <!-- Interactive Canvas Layer -->
+  <canvas id="gameCanvas" class="absolute inset-0 w-full h-full z-10 block cursor-pointer"></canvas>
+
+  <!-- Start Mission Overlay -->
+  <div id="startOverlay" class="absolute inset-0 bg-background/95 z-40 flex flex-col items-center justify-center p-6 text-center transition-all duration-300">
+    <div class="relative w-48 h-48 mb-6 relative z-10 flex items-center justify-center animate-bounce" style="animation-duration: 3s;">
+      <!-- Glow effect -->
+      <div class="absolute inset-0 bg-primary/30 rounded-full blur-[40px]"></div>
+      <!-- Hovering Shield Vector SVG -->
+      <svg class="w-40 h-40 text-primary drop-shadow-[0_15px_25px_rgba(255,107,0,0.4)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="url(#shieldGrad)" />
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="#ff6b00" stroke-width="2" />
+        <path d="M12 6v11M9 9h6M10 13h4" stroke="#32ff7e" stroke-width="2" />
+        <defs>
+          <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#ff6b00" stop-opacity="0.2" />
+            <stop offset="100%" stop-color="#ff6b00" stop-opacity="0.8" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+
+    <h2 class="text-3xl font-black text-charcoal tracking-tight uppercase">FIREWALL DRONE</h2>
+    <p class="text-sm font-semibold text-primary mt-1 tracking-widest">TACTICAL ARCADE UPGRADE</p>
+
+    <div class="my-6 max-w-sm bg-white p-4 rounded-2xl border-2 border-gray-200/80 shadow-sm text-left font-inter">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-primary font-bold text-sm">💡 MISSION BRIEFING:</span>
+      </div>
+      <p class="text-xs text-charcoal/80 leading-relaxed">
+        Guide the autonomous security drone through gaps in incoming firewall data packets. 
+        Tap anywhere inside the screen to trigger thrust and hover upward. Dodge obstacles to earn Reputation points!
+      </p>
+    </div>
+
+    <button onclick="startGame()" class="px-8 py-4 bg-primary hover:bg-primaryDark text-white text-base font-bold rounded-full shadow-[0_6px_0_0_#d35400] hover:shadow-[0_4px_0_0_#d35400] transition-all duration-150 tactile-press tracking-wider uppercase">
+      LAUNCH MISSION
+    </button>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div id="gameOverOverlay" class="absolute inset-0 bg-background/95 z-40 flex flex-col items-center justify-center p-6 text-center hidden transition-all duration-300">
+    <div class="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-4 border-2 border-primary/20">
+      <span class="text-4xl">⚠️</span>
+    </div>
+
+    <h2 class="text-4xl font-black text-charcoal tracking-tight uppercase">SYSTEM FAILURE</h2>
+    <p class="text-sm font-bold text-primary mt-1 tracking-widest">DRONE COLLISION DETECTED</p>
+
+    <div class="my-6 bg-white p-6 rounded-3xl border-2 border-gray-200/80 shadow-md min-w-[280px]">
+      <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-inter">XP GAINED</span>
+      <h3 id="finalScoreDisplay" class="text-5xl font-black text-primary tracking-tight mt-1">0</h3>
+      <p class="text-[11px] font-semibold text-charcoal/60 mt-2 font-inter">Added to CyberShield Leaderboard</p>
+    </div>
+
+    <div class="flex flex-col gap-3 w-full max-w-[280px]">
+      <button onclick="submitScore()" class="w-full py-4 bg-primary hover:bg-primaryDark text-white text-base font-bold rounded-full shadow-[0_6px_0_0_#d35400] hover:shadow-[0_4px_0_0_#d35400] transition-all duration-150 tactile-press uppercase tracking-wider">
+        SUBMIT XP TO LEADERBOARD
+      </button>
+      <button onclick="restartGame()" class="w-full py-3.5 bg-gray-200 hover:bg-gray-300 text-charcoal text-sm font-bold rounded-full transition-all duration-150 tactile-press border border-gray-300 uppercase tracking-wider">
+        RETRY MISSION
+      </button>
+    </div>
+  </div>
+
+  <!-- Core Javascript Implementation -->
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Load Drone Image
+    const droneImg = new Image();
+    droneImg.src = 'https://lh3.googleusercontent.com/aida-public/AB6AXuDT-XCGAUgT_MpafTKztZloLPumonqxVGjkg11ruaKvWtpL-zFRuHoc3cSxN2gHcGg0ATdIUO1TDv6kge2rIkTc_YpOOt4CgMaV8-1ygGPk_SgEc4jmcghds_Kg-slcuZsqsD-T8HWuiMUItgSfXWpxYqZOOhhIzzo7gu26bE49nKbqrqcJFRV_RNweCkBsMuA0Y2LEUrG-uiNIk8PBwAX4omEXrUVY8r8wZSmSXgTlUdSdxHufUB8_d1rO2L4ter5lIPxjH0djoXI';
+
+    // Game variables
+    let gameActive = false;
+    let gameOver = false;
+    let score = 0;
+    let lives = 3;
+    let screenShakeTime = 0;
+
+    // Physics parameters
+    let drone = {
+      x: 0,
+      y: 0,
+      width: 65,
+      height: 65,
+      velocity: 0,
+      gravity: 0.4,
+      thrust: -7.5,
+      rotation: 0
+    };
+
+    let obstacles = [];
+    let particles = [];
+    let backgroundParticles = [];
+    let obstacleTimer = 0;
+    let obstacleInterval = 100; // frames between obstacles
+    let frameCount = 0;
+    let invulnerableTimer = 0;
+
+    // Resize canvas
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      
+      // Keep drone at 20% of screen width
+      drone.x = canvas.width * 0.18;
+      if (!gameActive && !gameOver) {
+        drone.y = canvas.height / 2;
+      }
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Input handlers
+    function handleThrust() {
+      if (!gameActive || gameOver) return;
+      drone.velocity = drone.thrust;
+      
+      // Add visual thruster particles
+      for (let i = 0; i < 5; i++) {
+        particles.push({
+          x: drone.x + 10,
+          y: drone.y + drone.height / 2 + (Math.random() * 10 - 5),
+          vx: -3 - Math.random() * 3,
+          vy: Math.random() * 2 - 1,
+          size: Math.random() * 4 + 2,
+          color: 'rgba(255, 107, 0, 0.8)',
+          life: 1.0,
+          decay: 0.05
+        });
+      }
+    }
+
+    window.addEventListener('mousedown', (e) => {
+      if (e.target.tagName !== 'BUTTON') handleThrust();
+    });
+    window.addEventListener('touchstart', (e) => {
+      if (e.target.tagName !== 'BUTTON') handleThrust();
+    });
+
+    // Start / Restart game
+    function startGame() {
+      document.getElementById('startOverlay').style.opacity = '0';
+      setTimeout(() => {
+        document.getElementById('startOverlay').style.display = 'none';
+      }, 300);
+      initGame();
+    }
+
+    function restartGame() {
+      document.getElementById('gameOverOverlay').classList.add('hidden');
+      initGame();
+    }
+
+    function initGame() {
+      score = 0;
+      lives = 3;
+      gameOver = false;
+      gameActive = true;
+      drone.y = canvas.height / 2;
+      drone.velocity = 0;
+      drone.rotation = 0;
+      obstacles = [];
+      particles = [];
+      invulnerableTimer = 0;
+      frameCount = 0;
+      obstacleTimer = 0;
+
+      // Populate background particles
+      backgroundParticles = [];
+      for (let i = 0; i < 20; i++) {
+        backgroundParticles.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          speed: Math.random() * 1.5 + 0.5,
+          size: Math.random() * 3 + 1
+        });
+      }
+
+      updateHearts();
+      document.getElementById('scoreDisplay').innerText = '0';
+      
+      // Trigger Game Loop
+      requestAnimationFrame(gameLoop);
+    }
+
+    function updateHearts() {
+      const container = document.getElementById('livesContainer');
+      let heartsHtml = '';
+      for (let i = 0; i < 3; i++) {
+        if (i < lives) {
+          heartsHtml += '<span class="text-xl">❤️</span>';
+        } else {
+          heartsHtml += '<span class="text-xl opacity-25">❤️</span>';
+        }
+      }
+      container.innerHTML = heartsHtml;
+    }
+
+    // Main Game Loop
+    function gameLoop() {
+      if (!gameActive || gameOver) return;
+
+      frameCount++;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Handle screen shaking
+      if (screenShakeTime > 0) {
+        ctx.save();
+        const dx = (Math.random() - 0.5) * 8;
+        const dy = (Math.random() - 0.5) * 8;
+        ctx.translate(dx, dy);
+        screenShakeTime--;
+      }
+
+      // 1. Move & Draw Background Grid Floor Lines
+      moveGridFloor();
+
+      // 2. Background Star Particles
+      drawBackgroundStars();
+
+      // 3. Update & Draw Barriers
+      updateBarriers();
+
+      // 4. Update & Draw Drone
+      updateDrone();
+
+      // 5. Update & Draw Particle Effects
+      updateParticles();
+
+      if (screenShakeTime > 0) {
+        ctx.restore();
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    function moveGridFloor() {
+      const floor = document.getElementById('gridFloor');
+      if (floor) {
+        let currentPos = parseFloat(window.getComputedStyle(floor).backgroundPositionY) || 0;
+        floor.style.backgroundPositionY = (currentPos + 3) + 'px';
+      }
+    }
+
+    function drawBackgroundStars() {
+      ctx.fillStyle = 'rgba(255, 107, 0, 0.15)';
+      backgroundParticles.forEach(star => {
+        star.x -= star.speed;
+        if (star.x < 0) {
+          star.x = canvas.width;
+          star.y = Math.random() * canvas.height;
+        }
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function updateDrone() {
+      // Apply gravity
+      drone.velocity += drone.gravity;
+      drone.y += drone.velocity;
+
+      // Restrict to bounds
+      if (drone.y < 20) {
+        drone.y = 20;
+        drone.velocity = 0;
+      }
+      if (drone.y + drone.height > canvas.height - 20) {
+        drone.y = canvas.height - drone.height - 20;
+        drone.velocity = 0;
+      }
+
+      // Rotate based on velocity
+      drone.rotation = drone.velocity * 0.04;
+      if (drone.rotation > 0.5) drone.rotation = 0.5;
+      if (drone.rotation < -0.5) drone.rotation = -0.5;
+
+      // Invulnerable blink
+      if (invulnerableTimer > 0) {
+        invulnerableTimer--;
+        if (Math.floor(invulnerableTimer / 4) % 2 === 0) {
+          drawDroneGraphics();
+        }
+      } else {
+        drawDroneGraphics();
+      }
+    }
+
+    function drawDroneGraphics() {
+      ctx.save();
+      ctx.translate(drone.x + drone.width / 2, drone.y + drone.height / 2);
+      ctx.rotate(drone.rotation);
+
+      const w = drone.width;
+      const h = drone.height;
+
+      // 1. Soft back-glow
+      const glowGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, w / 2);
+      glowGrad.addColorStop(0, 'rgba(255, 107, 0, 0.45)');
+      glowGrad.addColorStop(1, 'rgba(255, 107, 0, 0)');
+      ctx.fillStyle = glowGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, w / 2 + 10, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2. Draw Vector Shield Shape
+      ctx.beginPath();
+      ctx.moveTo(0, -h / 2); // Top middle point
+      ctx.quadraticCurveTo(w / 2 - 5, -h / 2 + 5, w / 2 - 5, -h / 6); // Top right shoulder
+      ctx.quadraticCurveTo(w / 2 - 5, h / 4, 0, h / 2); // Bottom peak
+      ctx.quadraticCurveTo(-w / 2 + 5, h / 4, -w / 2 + 5, -h / 6); // Left shoulder
+      ctx.quadraticCurveTo(-w / 2 + 5, -h / 2 + 5, 0, -h / 2); // Back to top middle
+      ctx.closePath();
+
+      // Shield fill gradient
+      const shieldGrad = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
+      shieldGrad.addColorStop(0, '#ff9e59');
+      shieldGrad.addColorStop(0.5, '#ff6b00');
+      shieldGrad.addColorStop(1, '#a03a0f');
+      ctx.fillStyle = shieldGrad;
+      ctx.fill();
+
+      // Shield border
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Inner details/glowing core
+      ctx.beginPath();
+      ctx.moveTo(0, -h / 3);
+      ctx.quadraticCurveTo(w / 3 - 5, -h / 3 + 5, w / 3 - 5, -h / 12);
+      ctx.quadraticCurveTo(w / 3 - 5, h / 6, 0, h / 3 + 5);
+      ctx.quadraticCurveTo(-w / 3 + 5, h / 6, -w / 3 + 5, -h / 12);
+      ctx.quadraticCurveTo(-w / 3 + 5, -h / 3 + 5, 0, -h / 3);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.fill();
+      ctx.strokeStyle = '#32ff7e'; // Neon green inner border
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Center plus symbol (indicating active protection)
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      // Vertical line
+      ctx.moveTo(0, -h / 6);
+      ctx.lineTo(0, h / 6);
+      // Horizontal line
+      ctx.moveTo(-w / 6, 0);
+      ctx.lineTo(w / 6, 0);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function updateBarriers() {
+      obstacleTimer++;
+      if (obstacleTimer >= obstacleInterval) {
+        obstacleTimer = 0;
+        
+        // Setup dynamic gap sizing based on screen height
+        const minGap = 160;
+        const maxGap = 240;
+        const gapSize = Math.max(minGap, Math.min(maxGap, canvas.height * 0.25));
+        const gapPos = Math.random() * (canvas.height - gapSize - 200) + 100;
+
+        obstacles.push({
+          x: canvas.width,
+          width: 70,
+          gapTop: gapPos,
+          gapBottom: gapPos + gapSize,
+          speed: 4.5 + Math.min(score * 0.02, 3), // accelerate game
+          passed: false
+        });
+      }
+
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const obs = obstacles[i];
+        obs.x -= obs.speed;
+
+        // Bounding boxes
+        const topBar = { x: obs.x, y: 0, w: obs.width, h: obs.gapTop };
+        const bottomBar = { x: obs.x, y: obs.gapBottom, w: obs.width, h: canvas.height - obs.gapBottom };
+
+        // Render barriers with neon glowing vectors
+        drawBarrierSegment(topBar.x, topBar.y, topBar.w, topBar.h, true);
+        drawBarrierSegment(bottomBar.x, bottomBar.y, bottomBar.w, bottomBar.h, false);
+
+        // Check score increment
+        if (!obs.passed && obs.x + obs.width < drone.x) {
+          obs.passed = true;
+          score += 10;
+          document.getElementById('scoreDisplay').innerText = score;
+          
+          // Trigger celebration particles
+          triggerScoreParticles(obs.x + obs.width / 2, obs.gapTop + (obs.gapBottom - obs.gapTop) / 2);
+        }
+
+        // Collision Check
+        if (invulnerableTimer === 0) {
+          if (checkCollision(drone, topBar) || checkCollision(drone, bottomBar)) {
+            triggerHit();
+          }
+        }
+
+        // Remove out-of-screen
+        if (obs.x + obs.width < 0) {
+          obstacles.splice(i, 1);
+        }
+      }
+    }
+
+    function drawBarrierSegment(x, y, w, h, isTop) {
+      // Premium vibrant orange glass card barrier with glowing neon borders
+      ctx.save();
+      
+      // Glass core
+      ctx.fillStyle = 'rgba(27, 28, 28, 0.03)';
+      ctx.fillRect(x, y, w, h);
+
+      // Bright Orange glowing outer border
+      ctx.strokeStyle = '#ff6b00';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      if (isTop) {
+        ctx.roundRect(x, y - 10, w, h + 10, [0, 0, 16, 16]);
+      } else {
+        ctx.roundRect(x, y, w, h + 10, [16, 16, 0, 0]);
+      }
+      ctx.stroke();
+
+      // Accent Glowing line inside gap
+      ctx.fillStyle = '#ff6b00';
+      ctx.beginPath();
+      if (isTop) {
+        ctx.arc(x + w / 2, y + h - 8, 4, 0, Math.PI * 2);
+      } else {
+        ctx.arc(x + w / 2, y + 8, 4, 0, Math.PI * 2);
+      }
+      ctx.fill();
+
+      // Glowing neon edge light overlay
+      ctx.shadowColor = '#ff6b00';
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = 'rgba(255, 107, 0, 0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (isTop) {
+        ctx.moveTo(x, y + h);
+        ctx.lineTo(x + w, y + h);
+      } else {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + w, y);
+      }
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function checkCollision(objA, rect) {
+      // Safe, tight hitboxes for a high-end positive gameplay experience
+      const safetyMargin = 12;
+      return (
+        objA.x + safetyMargin < rect.x + rect.w &&
+        objA.x + objA.width - safetyMargin > rect.x &&
+        objA.y + safetyMargin < rect.y + rect.h &&
+        objA.y + objA.height - safetyMargin > rect.y
+      );
+    }
+
+    function triggerHit() {
+      lives--;
+      updateHearts();
+      screenShakeTime = 20;
+      invulnerableTimer = 90; // ~1.5s invulnerable blinking
+
+      // Create rich orange explosion particles
+      for (let i = 0; i < 20; i++) {
+        particles.push({
+          x: drone.x + drone.width / 2,
+          y: drone.y + drone.height / 2,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          size: Math.random() * 6 + 3,
+          color: 'rgba(255, 107, 0, 0.9)',
+          life: 1.0,
+          decay: 0.03
+        });
+      }
+
+      if (lives <= 0) {
+        triggerGameOver();
+      }
+    }
+
+    function triggerScoreParticles(x, y) {
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x: x,
+          y: y,
+          vx: (Math.random() - 0.5) * 4,
+          vy: (Math.random() - 0.5) * 4,
+          size: Math.random() * 4 + 2,
+          color: 'rgba(50, 255, 126, 0.8)',
+          life: 1.0,
+          decay: 0.04
+        });
+      }
+    }
+
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+      }
+    }
+
+    function triggerGameOver() {
+      gameOver = true;
+      gameActive = false;
+      document.getElementById('finalScoreDisplay').innerText = score;
+      document.getElementById('gameOverOverlay').classList.remove('hidden');
+    }
+
+    // Flutter Communication Integration Channel
+    function submitScore() {
+      if (window.FlutterGameChannel) {
+        window.FlutterGameChannel.postMessage(JSON.stringify({
+          action: 'submitScore',
+          score: score
+        }));
+      } else {
+        alert('Reputation Score Submitted locally: ' + score);
+      }
+    }
+
+    function closeGame() {
+      if (window.FlutterGameChannel) {
+        window.FlutterGameChannel.postMessage(JSON.stringify({
+          action: 'closeGame'
+        }));
+      } else {
+        console.log('Close game requested');
+      }
+    }
+  </script>
+</body>
+</html>

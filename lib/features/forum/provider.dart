@@ -105,16 +105,60 @@ class Comment {
   );
 }
 
-// 1. Categories Provider
 final categoriesProvider = FutureProvider<List<Category>>((ref) async {
   final client = ApiClient();
-  final response = await client.dio.get('/categories/list.php');
-  if (response.data['status'] == 'success') {
-    final list = response.data['data'] as List;
-    return list.map((e) => Category.fromJson(e)).toList();
+  try {
+    final response = await client.dio.get('/categories/list.php');
+    if (response.data['status'] == 'success') {
+      final list = response.data['data'] as List;
+      final categories = list.map((e) => Category.fromJson(e)).toList();
+      if (!categories.any((c) => c.id == 9999)) {
+        categories.add(Category(
+          id: 9999,
+          name: 'Security Advisories & Fraud Alerts',
+          description: 'Latest warnings, data breaches, and safety updates compiled by the AI reputation auditor.',
+          icon: 'security',
+        ));
+      }
+      return categories;
+    }
+  } catch (e) {
+    // Backend is offline/errored, fallback to static categories + custom Category 9999
   }
-  throw Exception(response.data['message'] ?? 'Failed to load categories');
+  return [
+    Category(id: 1, name: 'Threat Intelligence', description: 'Latest cyber threat news, CVEs and advisories', icon: 'radar'),
+    Category(id: 2, name: 'Malware Analysis', description: 'Share samples, reverse engineering and IOCs', icon: 'bug_report'),
+    Category(id: 3, name: 'Ethical Hacking', description: 'Penetration testing, CTFs and red-team discussions', icon: 'terminal'),
+    Category(id: 4, name: 'Security Tools', description: 'Reviews, how-tos and configs for security tools', icon: 'build'),
+    Category(id: 5, name: 'General Discussion', description: 'Anything cybersecurity — news, careers, opinions', icon: 'forum'),
+    Category(
+      id: 9999,
+      name: 'Security Advisories & Fraud Alerts',
+      description: 'Latest warnings, data breaches, and safety updates compiled by the AI reputation auditor.',
+      icon: 'security',
+    ),
+  ];
 });
+
+// Helper to sync local-only posts to the remote database
+void _syncLocalPostToRemote(ApiClient client, Map<String, dynamic> localPost) {
+  final title = localPost['title']?.toString() ?? '';
+  final content = localPost['content']?.toString() ?? '';
+  final isAnon = int.tryParse(localPost['is_anonymous']?.toString() ?? '0') ?? 0;
+  
+  if (title.isEmpty || content.isEmpty) return;
+
+  client.dio.post('/posts/create.php', data: {
+    'category_id': 9999,
+    'title': title,
+    'content': content,
+    'is_anonymous': isAnon,
+  }).then((res) {
+    print('Sync Category 9999 post to server success: ${res.data}');
+  }).catchError((err) {
+    print('Sync Category 9999 post to server failed: $err');
+  });
+}
 
 // 2. Posts Provider (Filtered by Category)
 final postsProvider = FutureProvider.family<List<Post>, int?>((ref, categoryId) async {
@@ -124,13 +168,58 @@ final postsProvider = FutureProvider.family<List<Post>, int?>((ref, categoryId) 
   ref.onDispose(() => timer.cancel());
 
   final client = ApiClient();
-  final queryParams = categoryId != null ? {'category_id': categoryId} : null;
-  final response = await client.dio.get('/posts/list.php', queryParameters: queryParams);
-  if (response.data['status'] == 'success') {
-    final list = response.data['data'] as List;
-    return list.map((e) => Post.fromJson(e)).toList();
+
+  if (categoryId == 9999) {
+    try {
+      final response = await client.dio.get('/posts/list.php', queryParameters: {'category_id': 9999});
+      if (response.data['status'] == 'success') {
+        final list = response.data['data'] as List;
+        final parsed = list.map((e) => Post.fromJson(e)).toList();
+        
+        // Merge and sync any local posts that are not in the remote database
+        final localJson = HiveBoxHelper.getSecurityForumPosts();
+        for (final local in localJson) {
+          final title = local['title']?.toString() ?? '';
+          if (!parsed.any((p) => p.title == title)) {
+            parsed.add(Post.fromJson(local));
+            _syncLocalPostToRemote(client, local);
+          }
+        }
+        return parsed;
+      }
+    } catch (_) {}
+
+    final localJson = HiveBoxHelper.getSecurityForumPosts();
+    return localJson.map((e) => Post.fromJson(e)).toList();
   }
-  throw Exception(response.data['message'] ?? 'Failed to load posts');
+
+  final queryParams = categoryId != null ? {'category_id': categoryId} : null;
+  try {
+    final response = await client.dio.get('/posts/list.php', queryParameters: queryParams);
+    if (response.data['status'] == 'success') {
+      final list = response.data['data'] as List;
+      final parsed = list.map((e) => Post.fromJson(e)).toList();
+      
+      if (categoryId == null) {
+        final localJson = HiveBoxHelper.getSecurityForumPosts();
+        for (final local in localJson) {
+          final title = local['title']?.toString() ?? '';
+          if (!parsed.any((p) => p.title == title)) {
+            parsed.add(Post.fromJson(local));
+            _syncLocalPostToRemote(client, local);
+          }
+        }
+      }
+      return parsed;
+    }
+  } catch (e) {
+    // Return local security posts when backend is offline
+    if (categoryId == null || categoryId == 9999) {
+      final localJson = HiveBoxHelper.getSecurityForumPosts();
+      return localJson.map((e) => Post.fromJson(e)).toList();
+    }
+  }
+  return [];
 });
 
 // 3. Comments Provider
@@ -141,12 +230,84 @@ final commentsProvider = FutureProvider.family<List<Comment>, int>((ref, postId)
   ref.onDispose(() => timer.cancel());
 
   final client = ApiClient();
-  final response = await client.dio.get('/comments/list.php', queryParameters: {'post_id': postId});
-  if (response.data['status'] == 'success') {
-    final list = response.data['data'] as List;
-    return list.map((e) => Comment.fromJson(e)).toList();
+
+  if (postId > 999999) {
+    final localJson = HiveBoxHelper.getSecurityForumComments(postId);
+    return localJson.map((e) => Comment.fromJson(e)).toList();
   }
-  throw Exception(response.data['message'] ?? 'Failed to load comments');
+
+  try {
+    final response = await client.dio.get('/comments/list.php', queryParameters: {'post_id': postId});
+    if (response.data['status'] == 'success') {
+      final list = response.data['data'] as List;
+      return list.map((e) => Comment.fromJson(e)).toList();
+    }
+  } catch (e) {
+    // Return local comments if we are offline and this is a local post
+    if (postId > 999999) {
+      final localJson = HiveBoxHelper.getSecurityForumComments(postId);
+      return localJson.map((e) => Comment.fromJson(e)).toList();
+    }
+  }
+  return [];
+});
+
+// 3.5. Notifications Model & Providers
+class AppNotification {
+  final int id;
+  final int userId;
+  final String type;
+  final String title;
+  final String message;
+  final bool isRead;
+  final DateTime createdAt;
+
+  AppNotification({
+    required this.id,
+    required this.userId,
+    required this.type,
+    required this.title,
+    required this.message,
+    required this.isRead,
+    required this.createdAt,
+  });
+
+  factory AppNotification.fromJson(Map<String, dynamic> json) => AppNotification(
+    id: int.parse(json['id'].toString()),
+    userId: int.parse(json['user_id'].toString()),
+    type: json['type'].toString(),
+    title: json['title'].toString(),
+    message: json['message'].toString(),
+    isRead: json['is_read'].toString() == '1' || json['is_read'] == true,
+    createdAt: DateTime.parse(json['created_at'].toString()),
+  );
+}
+
+final notificationsProvider = FutureProvider<List<AppNotification>>((ref) async {
+  final timer = Timer.periodic(const Duration(seconds: 4), (_) {
+    ref.invalidateSelf();
+  });
+  ref.onDispose(() => timer.cancel());
+
+  final client = ApiClient();
+  try {
+    final response = await client.dio.get('/api/notifications/list.php');
+    if (response.data['status'] == 'success') {
+      final list = response.data['data'] as List;
+      return list.map((e) => AppNotification.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+    }
+  } catch (e) {
+    print('Error loading notifications: $e');
+  }
+  return [];
+});
+
+final unreadNotificationsCountProvider = Provider<int>((ref) {
+  final notificationsAsync = ref.watch(notificationsProvider);
+  return notificationsAsync.maybeWhen(
+    data: (list) => list.where((n) => !n.isRead).length,
+    orElse: () => 0,
+  );
 });
 
 // 4. Thread Operations Notifier (Likes, Posts, Comments)
@@ -174,7 +335,51 @@ class ForumNotifier extends StateNotifier<void> {
 
   ForumNotifier(this.ref) : super(null);
 
+  Future<bool> markNotificationsAsRead([int? notificationId]) async {
+    try {
+      final response = await _client.dio.post('/api/notifications/read.php', data: {
+        if (notificationId != null) 'notification_id': notificationId,
+      });
+      if (response.data['status'] == 'success') {
+        ref.invalidate(notificationsProvider);
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<String?> createPost(int categoryId, String title, String content, bool isAnonymous) async {
+    if (categoryId == 9999) {
+      final post = {
+        'id': DateTime.now().millisecondsSinceEpoch,
+        'user_id': HiveBoxHelper.getUserId() ?? 999,
+        'category_id': 9999,
+        'title': title,
+        'content': content,
+        'is_anonymous': isAnonymous ? 1 : 0,
+        'likes_count': 0,
+        'comments_count': 0,
+        'author_name': HiveBoxHelper.getUsername() ?? 'Cyber Guardian',
+        'author_avatar': HiveBoxHelper.getAvatar() ?? 'user.png',
+        'author_rank': HiveBoxHelper.getRank() ?? 'WhiteHat Trainee',
+        'category_name': 'Security Advisories & Fraud Alerts',
+        'created_at': DateTime.now().toIso8601String(),
+      };
+      await HiveBoxHelper.addSecurityForumPost(post);
+      try {
+        await _client.dio.post('/posts/create.php', data: {
+          'category_id': 9999,
+          'title': title,
+          'content': content,
+          'is_anonymous': isAnonymous ? 1 : 0,
+        });
+      } catch (e) {
+        print('Error pushing Category 9999 post to server: $e');
+      }
+      return null;
+    }
     try {
       final response = await _client.dio.post('/posts/create.php', data: {
         'category_id': categoryId,
@@ -197,6 +402,21 @@ class ForumNotifier extends StateNotifier<void> {
   }
 
   Future<bool> createComment(int postId, String content, bool isAnonymous) async {
+    if (postId > 999999) {
+      final comment = {
+        'id': DateTime.now().millisecondsSinceEpoch,
+        'post_id': postId,
+        'user_id': HiveBoxHelper.getUserId() ?? 999,
+        'content': content,
+        'is_anonymous': isAnonymous ? 1 : 0,
+        'author_name': HiveBoxHelper.getUsername() ?? 'Cyber Guardian',
+        'author_avatar': HiveBoxHelper.getAvatar() ?? 'user.png',
+        'author_rank': HiveBoxHelper.getRank() ?? 'WhiteHat Trainee',
+        'created_at': DateTime.now().toIso8601String(),
+      };
+      await HiveBoxHelper.addSecurityForumComment(postId, comment);
+      return true;
+    }
     try {
       final response = await _client.dio.post('/comments/create.php', data: {
         'post_id': postId,
@@ -210,6 +430,19 @@ class ForumNotifier extends StateNotifier<void> {
   }
 
   Future<bool> toggleLike(int postId) async {
+    if (postId > 999999) {
+      final list = HiveBoxHelper.getSecurityForumPosts();
+      final idx = list.indexWhere((p) => int.tryParse(p['id'].toString()) == postId);
+      if (idx != -1) {
+        final currentLikes = int.tryParse(list[idx]['likes_count'].toString()) ?? 0;
+        final alreadyLiked = HiveBoxHelper.getSavedPostIds().contains(postId);
+        
+        list[idx]['likes_count'] = alreadyLiked ? currentLikes - 1 : currentLikes + 1;
+        await HiveBoxHelper.toggleSavedPostId(postId);
+        await HiveBoxHelper.saveSecurityForumPosts(list);
+      }
+      return true;
+    }
     try {
       final response = await _client.dio.post('/posts/like.php', data: {
         'post_id': postId,

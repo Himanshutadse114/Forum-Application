@@ -1,0 +1,13 @@
+<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'>
+<title>Onion</title>
+<g stroke='#000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'>
+<!-- sprout/top -->
+<path d='M32 14 L28 8 M32 14 L36 8' fill='none' />
+<!-- bulb -->
+<path d="M20 20 C20 16 24 14 32 14 C40 14 44 16 44 20 C48 24 50 30 50 36 C50 46 42 54 32 54 C22 54 14 46 14 36 C14 30 16 24 20 20 Z"
+      fill="#b48ad6" />
+<!-- highlight -->
+<path d="M24 22 C22 26 21 30 21 34" fill="#d8c2ef" stroke="none" />
+</g>
+</svg>
+

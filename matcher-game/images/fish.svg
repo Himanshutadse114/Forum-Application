@@ -1,0 +1,15 @@
+<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'>
+<title>Smoked Fish</title>
+<g stroke='#000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'>
+<!-- body -->
+<path d='M16 32 C22 26 28 24 34 24 C40 24 46 26 52 32 C46 38 40 40 34 40 C28 40 22 38 16 32 Z'
+fill='#8a5a2f' />
+<!-- tail -->
+<path d='M16 32 L10 26 L10 38 Z' fill='#8a5a2f' />
+<!-- eye -->
+<circle cx='38' cy='30' r='2' fill='#000' stroke='none' />
+<!-- highlight along top -->
+<path d='M20 28 C24 26 29 25 34 25' fill='#b37a42' stroke='none' />
+</g>
+</svg>
+

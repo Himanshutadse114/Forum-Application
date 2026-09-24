@@ -1,0 +1,1363 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport" />
+  <title>Cyber Match - Play</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet" />
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "error-container": "#fb5151",
+            "secondary-container": "#ffc3bd",
+            "surface-container-low": "#f0f1f1",
+            "surface-container-lowest": "#ffffff",
+            "surface-bright": "#f6f6f6",
+            "primary-fixed": "#fe7e4f",
+            "primary": "#a03a0f",
+            "error-dim": "#9f0519",
+            "on-surface-variant": "#5a5c5c",
+            "on-primary": "#ffefeb",
+            "tertiary-container": "#f19dfe",
+            "surface-container-high": "#e1e3e3",
+            "on-error-container": "#570008",
+            "on-primary-container": "#491300",
+            "inverse-primary": "#fe7e4f",
+            "outline": "#767777",
+            "on-secondary-fixed-variant": "#912d29",
+            "surface-tint": "#a03a0f",
+            "surface-container-highest": "#dbdddd",
+            "secondary-fixed-dim": "#ffafa8",
+            "on-tertiary-fixed-variant": "#681f79",
+            "on-secondary-fixed": "#6a1010",
+            "secondary-fixed": "#ffc3bd",
+            "surface": "#f6f6f6",
+            "on-secondary-container": "#852421",
+            "on-secondary": "#ffefed",
+            "tertiary": "#863c96",
+            "on-primary-fixed-variant": "#591800",
+            "on-surface": "#2d2f2f",
+            "surface-variant": "#dbdddd",
+            "inverse-on-surface": "#9c9d9d",
+            "primary-fixed-dim": "#ed7244",
+            "on-tertiary-container": "#5e136f",
+            "primary-container": "#fe7e4f",
+            "secondary": "#a03833",
+            "tertiary-fixed-dim": "#e290ef",
+            "error": "#b31b25",
+            "background": "#f6f6f6",
+            "secondary-dim": "#902c28",
+            "tertiary-fixed": "#f19dfe",
+            "on-background": "#2d2f2f",
+            "on-error": "#ffefee",
+            "inverse-surface": "#0c0f0f",
+            "on-tertiary-fixed": "#40004f",
+            "on-tertiary": "#ffeefc",
+            "on-primary-fixed": "#020000",
+            "surface-dim": "#d3d5d5",
+            "outline-variant": "#acadad",
+            "tertiary-dim": "#793089",
+            "surface-container": "#e7e8e8",
+            "primary-dim": "#902e02"
+          },
+          "borderRadius": {
+            "DEFAULT": "1rem",
+            "lg": "2rem",
+            "xl": "3rem",
+            "full": "9999px"
+          },
+          "fontFamily": {
+            "headline": ["RebellionSquad", "Plus Jakarta Sans"],
+            "display": ["RebellionSquad", "Plus Jakarta Sans"],
+            "body": ["Plus Jakarta Sans"],
+            "label": ["Plus Jakarta Sans"]
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @font-face {
+      font-family: 'RebellionSquad';
+      src: url('RebellionSquad-ZpprZ.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+    }
+
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+
+    .lane-track {
+      position: absolute;
+      inset: 0;
+    }
+
+    .item {
+      position: absolute;
+      left: 50%;
+      width: 84px;
+      height: 84px;
+      margin-left: -42px;
+      transform: translateY(-50%);
+      z-index: 2;
+      transition: filter 90ms ease, transform 90ms ease;
+    }
+
+    .item img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: white;
+      border-radius: 1.5rem;
+      padding: 0.75rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+    }
+
+    .item.active img {
+      outline: 4px solid #fe7e4f;
+      outline-offset: 2px;
+      box-shadow: 0 0 24px rgba(254, 126, 79, 0.3);
+    }
+
+    .item.good {
+      transform: translateY(-50%) scale(1.1);
+      filter: drop-shadow(0 0 16px rgba(81, 207, 102, 0.7));
+    }
+
+    .item.bad {
+      transform: translateY(-50%) scale(0.94);
+      filter: drop-shadow(0 0 14px rgba(255, 107, 107, 0.7));
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      background: rgba(45, 47, 47, 0.4);
+      backdrop-filter: blur(24px);
+    }
+
+    .overlay.show {
+      display: grid;
+    }
+
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 140px;
+      transform: translateX(-50%);
+      z-index: 50;
+      padding: 12px 24px;
+      border-radius: 999px;
+      background: white;
+      color: #2d2f2f;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+      font-weight: 800;
+      display: none;
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translate(-50%, 20px); opacity: 0; }
+      to { transform: translate(-50%, 0); opacity: 1; }
+    }
+
+    .toast.show {
+      display: block;
+    }
+
+    @keyframes spin-slow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin-slow {
+      animation: spin-slow 20s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container min-h-screen overflow-hidden">
+  <header class="fixed top-0 w-full z-50 flex justify-between items-center px-8 py-4 bg-stone-50/80 dark:bg-stone-950/80 backdrop-blur-xl rounded-b-[2.5rem] shadow-[0_20px_50px_rgba(254,126,79,0.08)]">
+    <div class="w-10"></div>
+    <div class="flex-1 text-center"></div>
+    <button onclick="exitGame()" class="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-stone-600 hover:text-primary transition-colors">
+      <span class="material-symbols-outlined">close</span>
+    </button>
+  </header>
+
+  <main class="pt-16 lg:pt-24 pb-20 px-4 lg:px-6 min-h-screen flex flex-col lg:grid lg:grid-cols-[1fr_480px_1fr] lg:gap-12 max-w-[1600px] mx-auto relative overflow-y-auto lg:overflow-visible">
+    
+    <!-- Left Sidebar (Laptop Only) -->
+    <aside class="hidden lg:flex flex-col gap-6">
+      <div class="card p-8 bg-white/50 backdrop-blur-md rounded-[2.5rem] border border-white/50 shadow-sm">
+        <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 mb-4">Intelligence Feed</p>
+        <div class="space-y-4">
+          <div class="p-4 bg-white rounded-2xl shadow-sm border border-blue-50">
+            <p class="text-xs font-bold text-on-surface mb-1">Threat Level</p>
+            <p class="text-xs text-on-surface-variant">Monitoring active synchronization protocols in Sector <span id="sideLevel">1</span>.</p>
+          </div>
+          <div class="p-4 bg-white rounded-2xl shadow-sm border border-blue-50">
+            <p class="text-xs font-bold text-on-surface mb-1">Objective</p>
+            <p class="text-xs text-on-surface-variant" id="sideRule">Synchronize identical security tokens.</p>
+          </div>
+        </div>
+      </div>
+      
+      <div class="card p-8 bg-blue-600 rounded-[2.5rem] text-white shadow-lg shadow-blue-200">
+        <span class="material-symbols-outlined text-4xl mb-4">lightbulb</span>
+        <p class="text-xl font-bold leading-tight mb-2">Pro Tip</p>
+        <p class="text-sm opacity-90 leading-relaxed" id="sideTip">Use unique, complex passwords for every account to stay secure.</p>
+      </div>
+    </aside>
+
+    <!-- Center Section (Lanes) -->
+    <section class="flex flex-col gap-4 lg:gap-8 h-full order-2 lg:order-none">
+      <!-- Main Game Area -->
+      <div class="flex-1 w-full relative grid grid-cols-2 gap-4 min-h-[300px] lg:min-h-[500px] mb-4 lg:mb-8">
+        <!-- Left Lane -->
+        <div id="leftLane" class="h-full bg-surface-container-low rounded-xl relative flex flex-col items-center overflow-hidden border border-white/50"></div>
+        <!-- Right Lane -->
+        <div id="rightLane" class="h-full bg-surface-container-low rounded-xl relative flex flex-col items-center overflow-hidden border border-white/50"></div>
+        
+        <!-- Center Hit Window -->
+        <div class="absolute top-[30%] lg:top-[40%] left-0 right-0 h-24 -translate-y-1/2 flex items-center justify-center pointer-events-none z-10">
+          <div class="w-[110%] h-full bg-primary-container/10 border-y-4 border-primary-container/40 backdrop-blur-[2px] flex items-center justify-between px-4 relative">
+            <div class="absolute inset-0 bg-gradient-to-r from-transparent via-primary-container/5 to-transparent"></div>
+            <span class="material-symbols-outlined text-primary-container opacity-50 scale-150">arrow_forward</span>
+            <span class="material-symbols-outlined text-primary-container opacity-50 scale-150">arrow_back</span>
+          </div>
+        </div>
+        
+        <!-- Connect Line for animation -->
+        <div id="connectLine" class="absolute left-1/2 top-[30%] lg:top-[40%] w-0 h-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-r from-transparent via-primary-container to-transparent opacity-0 pointer-events-none z-20"></div>
+      </div>
+    </section>
+
+    <!-- Right Sidebar (Stats) -->
+    <aside class="flex flex-col gap-4 lg:gap-6 order-1 lg:order-none mb-3 lg:mb-0">
+      <div class="card p-4 lg:p-8 bg-white rounded-2xl lg:rounded-[2.5rem] shadow-sm border border-white/50">
+        <div class="flex justify-between items-end">
+          <div>
+            <p class="text-on-surface-variant font-bold tracking-widest uppercase text-[10px]">Security Integrity</p>
+            <h2 class="text-4xl font-extrabold tracking-tighter text-on-surface">
+              <span id="scoreChip">0</span>
+              <span class="text-primary text-xl ml-1">BITS</span>
+            </h2>
+          </div>
+          <div class="flex flex-col items-end gap-2 text-right">
+            <div class="bg-surface-container-lowest px-4 py-2 rounded-full shadow-sm border border-outline-variant/10 flex items-center justify-center gap-2 h-9" id="livesChip">
+              <span class="text-lg flex items-center justify-center leading-none" style="width: 1.25rem; height: 1.25rem; filter: drop-shadow(0 2px 4px rgba(239, 68, 68, 0.2));">❤️</span>
+              <span class="font-bold text-red-600 text-sm leading-none" id="livesCount">3</span>
+            </div>
+            <div>
+              <p class="text-on-surface-variant font-bold tracking-widest uppercase text-[10px]" id="levelChip">Level 1</p>
+              <p class="text-xl font-extrabold text-on-surface" id="rankTitle">Security Trainee</p>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div class="w-full h-4 bg-surface-container-highest rounded-full overflow-hidden p-1 shadow-inner mb-4">
+          <div id="progressFill" class="h-full bg-gradient-to-r from-primary to-primary-container rounded-full relative overflow-hidden transition-all duration-300" style="width: 0%;">
+            <div class="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,0.2)_25%,transparent_25%,transparent_50%,rgba(255,255,255,0.2)_50%,rgba(255,255,255,0.2)_75%,transparent_75%,transparent)] bg-[length:20px_20px]"></div>
+          </div>
+        </div>
+        <div class="flex justify-between text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+          <span>Progress</span>
+          <span id="goalChip">0 / 6</span>
+        </div>
+      </div>
+
+      <!-- Combo Card (Laptop only) -->
+      <div class="card p-8 bg-surface-container-lowest rounded-[2.5rem] border border-outline-variant/10 hidden lg:block">
+        <p class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">Efficiency Streak</p>
+        <p class="text-5xl font-black italic tracking-tighter text-primary" id="comboChip">x1</p>
+      </div>
+
+      <!-- Rule Card (Laptop only) -->
+      <div class="hidden lg:block">
+        <p class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-4 px-2">Sector Protocol</p>
+        <div class="p-6 bg-surface-container-low rounded-3xl border border-white">
+          <p id="ruleTitle" class="font-bold text-on-surface mb-1">Sector 1: Pattern Recognition</p>
+          <p id="ruleText" class="text-xs text-on-surface-variant leading-relaxed">Synchronize identical security tokens.</p>
+        </div>
+      </div>
+      
+      <!-- Hidden Elements for script stability -->
+      <div id="ruleTitleMobile" class="hidden"></div>
+      <div id="ruleTextMobile" class="hidden"></div>
+      <img id="targetPreview" class="hidden" alt="" src="" />
+      <button id="restartButton" class="hidden"></button>
+    </aside>
+
+    <!-- Floating Match Action -->
+    <div class="fixed bottom-12 left-0 w-full z-40 flex justify-center pointer-events-none">
+      <button id="matchButton" class="pointer-events-auto group relative w-28 h-28 rounded-full bg-gradient-to-b from-primary-container to-primary shadow-[0_20px_50px_rgba(160,58,15,0.4)] flex items-center justify-center transform transition-all active:scale-90 bouncy-active hover:scale-105">
+        <div class="absolute inset-2 border-4 border-white/20 rounded-full border-dashed animate-spin-slow"></div>
+        <div class="text-white flex flex-col items-center">
+          <span class="material-symbols-outlined text-5xl mb-[-4px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+          <span class="font-black text-[10px] uppercase tracking-[0.2em]">Match</span>
+        </div>
+      </button>
+    </div>
+
+    <!-- Walkthrough Overlay -->
+    <div class="overlay" id="walkthroughOverlay">
+      <div class="card p-10 bg-white rounded-[3rem] shadow-2xl text-center max-w-md relative overflow-hidden">
+        <!-- Progress Indicator -->
+        <div class="flex justify-center gap-2 mb-8" id="walkthroughDots">
+          <div class="w-12 h-1.5 rounded-full bg-primary"></div>
+          <div class="w-12 h-1.5 rounded-full bg-surface-container-highest"></div>
+          <div class="w-12 h-1.5 rounded-full bg-surface-container-highest"></div>
+          <div class="w-12 h-1.5 rounded-full bg-surface-container-highest"></div>
+        </div>
+
+        <div id="walkthroughContent" class="transition-all duration-300 transform translate-y-0 opacity-100">
+          <div class="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 text-primary">
+            <span class="material-symbols-outlined text-5xl" id="walkthroughIcon">shield_person</span>
+          </div>
+          <h2 id="walkthroughTitle" class="text-3xl font-black mb-4 tracking-widest font-headline text-primary">Mission Brief</h2>
+          <p id="walkthroughText" class="text-on-surface-variant leading-relaxed mb-10">Welcome, Agent. Your objective is to synchronize security protocols to prevent a global data breach.</p>
+        </div>
+
+        <button id="walkthroughNext" class="w-full py-4 bg-primary text-white font-bold rounded-full bouncy-active shadow-lg shadow-primary/30 flex items-center justify-center gap-2">
+          <span>Continue</span>
+          <span class="material-symbols-outlined text-xl">arrow_forward</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Overlays -->
+    <div class="overlay" id="startOverlay">
+      <div class="card p-12 bg-white rounded-[3rem] shadow-2xl text-center max-w-sm">
+        <h2 class="text-4xl font-black mb-4 tracking-widest font-headline text-primary">System Ready?</h2>
+        <p class="text-on-surface-variant mb-8">Synchronize security tokens as they pass through the decryption zone.</p>
+        <button id="startButton" class="w-full py-4 bg-primary text-white font-bold rounded-full bouncy-active shadow-lg shadow-primary/30">Initiate Guard</button>
+      </div>
+    </div>
+
+    <div class="overlay" id="endOverlay">
+      <div class="card p-10 bg-white rounded-[3rem] shadow-2xl text-center max-w-sm">
+        <h2 id="endTitle" class="text-4xl font-black mb-2 text-primary tracking-widest font-headline">Breach Averted</h2>
+        <p id="endText" class="text-on-surface-variant mb-6">Integrity maintained.</p>
+        
+        <!-- Learning Section -->
+        <div class="bg-blue-50 rounded-2xl p-6 mb-8 text-left border border-blue-100">
+          <p class="text-[10px] font-black uppercase tracking-widest text-blue-600 mb-2">Security Insight</p>
+          <p id="securityTip" class="text-sm leading-relaxed text-blue-900 font-medium">Always use two-factor authentication to protect your sensitive accounts from unauthorized access.</p>
+        </div>
+
+        <div class="flex flex-col gap-3">
+          <button id="nextButton" class="w-full py-4 bg-primary text-white font-bold rounded-full bouncy-active shadow-lg shadow-primary/30">Next Sector</button>
+          <button id="playAgainButton" class="w-full py-4 bg-surface-container-high text-on-surface font-bold rounded-full bouncy-active">Re-scan</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quiz Overlay -->
+    <div class="overlay" id="quizOverlay">
+      <div class="card p-10 bg-white rounded-[3rem] shadow-2xl text-center max-w-md">
+        <div class="flex justify-center mb-4">
+          <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
+            <span class="material-symbols-outlined">psychology</span>
+          </div>
+        </div>
+        <h2 class="text-3xl font-black mb-2 tracking-widest font-headline text-primary">Security Validation</h2>
+        <p class="text-on-surface-variant text-sm mb-6">Solve 3 security puzzles to restore system access.</p>
+        
+        <div class="mb-8 text-left">
+          <div class="flex justify-between items-center mb-4">
+            <span class="text-[10px] font-black uppercase tracking-widest text-primary" id="quizProgress">Task 1 of 3</span>
+            <div class="flex gap-1" id="quizDots">
+              <div class="w-2 h-2 rounded-full bg-surface-container-highest"></div>
+              <div class="w-2 h-2 rounded-full bg-surface-container-highest"></div>
+              <div class="w-2 h-2 rounded-full bg-surface-container-highest"></div>
+            </div>
+          </div>
+          <p id="quizQuestion" class="text-lg font-bold leading-tight text-on-surface mb-6">Which of these is the most secure password practice?</p>
+          <div class="flex flex-col gap-3" id="quizOptions">
+            <!-- Options added dynamically -->
+          </div>
+        </div>
+
+        <button id="quitQuizButton" class="text-on-surface-variant text-xs font-bold uppercase tracking-widest hover:text-primary transition-colors">Abondon System</button>
+      </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+  </main>
+
+  <!-- Bottom Navigation Bar -->
+
+
+  <!-- Background Decor -->
+  <div class="fixed top-40 -left-10 opacity-5 -rotate-12 pointer-events-none">
+    <span class="material-symbols-outlined text-[200px] text-primary">lock</span>
+  </div>
+  <div class="fixed bottom-40 -right-20 opacity-5 rotate-12 pointer-events-none">
+    <span class="material-symbols-outlined text-[200px] text-primary">security</span>
+  </div>
+</body>
+
+  <script>
+    const INGREDIENTS = [
+      { name: "Lock", icon: "lock" },
+      { name: "Shield", icon: "shield" },
+      { name: "Password", icon: "password" },
+      { name: "Firewall", icon: "security" },
+      { name: "VPN Key", icon: "vpn_key" },
+      { name: "Fingerprint", icon: "fingerprint" },
+      { name: "Database", icon: "database" },
+      { name: "Cloud", icon: "cloud_done" }
+    ];
+
+    const SECURITY_TIPS = [
+      "Use unique, complex passwords for every account to prevent credential stuffing attacks.",
+      "Enable Multi-Factor Authentication (MFA) to add an extra layer of security beyond just a password.",
+      "Be cautious of phishing emails that create a sense of urgency to trick you into clicking malicious links.",
+      "Keep your operating system and applications updated to protect against known vulnerabilities.",
+      "A firewall acts as a gatekeeper, monitoring and controlling incoming and outgoing network traffic.",
+      "Encryption transforms readable data into a scrambled format that can only be read with a decryption key.",
+      "Public Wi-Fi networks are often unencrypted; avoid accessing banking or sensitive apps on them.",
+      "Regularly back up your important data to an offline drive or secure cloud service to mitigate ransomware risks.",
+      "Hover over links in emails to see the actual destination URL before clicking.",
+      "Use a reputable password manager to securely store and generate high-entropy passwords."
+    ];
+
+    const CYBER_QUIZ = [
+      { q: "What does MFA stand for?", a: ["Multi-Factor Authentication", "Main Firewall Access", "Mobile Fast App"], c: 0 },
+      { q: "Which is most secure for passwords?", a: ["Using your pet's name", "A unique, long passphrase", "12345678"], c: 1 },
+      { q: "What is phishing?", a: ["Catching data in water", "A social engineering attack via email", "A type of firewall"], c: 1 },
+      { q: "What is the purpose of a Firewall?", a: ["To stop physical fires", "To monitor and control network traffic", "To speed up the internet"], c: 1 },
+      { q: "What is ransomware?", a: ["Malware that encrypts files for money", "A tool to fix computers", "A software to speed up PCs"], c: 0 },
+      { q: "What does VPN stand for?", a: ["Very Private Network", "Virtual Private Network", "Visible Path Node"], c: 1 },
+      { q: "What is Two-Factor Authentication?", a: ["Using two different computers", "Requiring two forms of identification", "Typing the password twice"], c: 1 },
+      { q: "Which URL prefix is more secure?", a: ["http://", "https://", "ftp://"], c: 1 },
+      { q: "What is a 'Brute Force' attack?", a: ["Physically hitting a server", "Systematically guessing passwords", "Using a large magnet"], c: 1 },
+      { q: "What is 'Social Engineering'?", a: ["Building social media apps", "Manipulating people to give up secrets", "Designing office layouts"], c: 1 },
+      { q: "What is a 'Zero-Day' vulnerability?", a: ["A bug fixed within zero days", "An unpatched, unknown flaw", "A very old software bug"], c: 1 },
+      { q: "Which is a biometric authentication?", a: ["A smart card", "Fingerprint scanning", "A security token"], c: 1 },
+      { q: "What is 'End-to-End Encryption'?", a: ["Encryption only at the start", "Data encrypted for the whole journey", "Encryption only at the end"], c: 1 },
+      { q: "What is a 'Trojan' in cyber security?", a: ["A strong virus protector", "Malware disguised as useful software", "A fast internet connection"], c: 0 },
+      { q: "What should you do with suspicious emails?", a: ["Reply to them", "Delete and report them", "Forward to friends"], c: 1 },
+      { q: "What is a 'Patch'?", a: ["A physical sticker", "A software update to fix bugs", "A type of cable"], c: 1 },
+      { q: "What is 'Spyware'?", a: ["Software that watches your actions", "A tool for private investigators", "A camera app"], c: 0 },
+      { q: "What is an 'Evil Twin' attack?", a: ["A duplicate server", "A fraudulent Wi-Fi access point", "A virus that replicates"], c: 1 },
+      { q: "Which of these is a 'Strong Password'?", a: ["Password123", "P@ssw0rd!2024", "Admin"], c: 1 },
+      { q: "What is 'Juice Jacking'?", a: ["Drinking too much juice", "Data theft via USB charging ports", "Fast charging technology"], c: 1 },
+      { q: "What is a 'DDOS' attack?", a: ["Data Deletion On Site", "Distributed Denial Of Service", "Digital Disk Operating System"], c: 1 },
+      { q: "What is 'Whaling' in security?", a: ["Hunting sea animals", "Phishing targeting high-level executives", "A large database"], c: 1 },
+      { q: "What is 'Shoulder Surfing'?", a: ["Surfing on shoulders", "Watching someone enter credentials", "A type of VR game"], c: 1 },
+      { q: "What is the 'Principle of Least Privilege'?", a: ["Giving everyone admin access", "Only giving necessary access", "No one gets access"], c: 1 },
+      { q: "What is a 'Firewall' policy?", a: ["A set of rules for traffic", "A fire insurance policy", "A guest list"], c: 0 },
+      { q: "What is 'Public Key Infrastructure'?", a: ["A public park", "A system for managing digital keys", "A set of door locks"], c: 1 },
+      { q: "What is an 'SQL Injection'?", a: ["A database medical procedure", "Inserting malicious code into queries", "Adding more data"], c: 1 },
+      { q: "What is 'Data Sanitization'?", a: ["Cleaning hard drives with soap", "Removing sensitive info from media", "Organizing files"], c: 1 },
+      { q: "What is a 'Honey Pot'?", a: ["A jar of honey", "A decoy system to lure hackers", "A sticky keyboard"], c: 1 },
+      { q: "Why is 'Software Update' important?", a: ["To change the colors", "To fix security holes", "To delete old files"], c: 1 }
+    ];
+
+    const COLORS = ["red", "green", "blue", "gold"];
+
+    const LEVELS = [
+      {
+        level: 1,
+        goal: 6,
+        speedLeft: 120,
+        speedRight: 120,
+        spawnMs: 900,
+        hitWindow: 56,
+        pool: 4,
+        colorMode: false,
+        title: "Sector 1: Pattern Recognition",
+        text: "Synchronize identical security tokens."
+      },
+      {
+        level: 2,
+        goal: 8,
+        speedLeft: 150,
+        speedRight: 150,
+        spawnMs: 760,
+        hitWindow: 50,
+        pool: 4,
+        colorMode: false,
+        title: "Sector 2: Accelerated Sync",
+        text: "Data flow is increasing. Stay focused."
+      },
+      {
+        level: 3,
+        goal: 10,
+        speedLeft: 170,
+        speedRight: 170,
+        spawnMs: 700,
+        hitWindow: 46,
+        pool: 5,
+        colorMode: true,
+        title: "Sector 3: Encryption Match",
+        text: "Match both token type and encryption level (color)."
+      },
+      {
+        level: 4,
+        goal: 12,
+        speedLeft: 190,
+        speedRight: 190,
+        spawnMs: 650,
+        hitWindow: 40,
+        pool: 6,
+        colorMode: true,
+        title: "Sector 4: High Stress Sync",
+        text: "Critical data flow detected. Tighter timing."
+      },
+      {
+        level: 5,
+        goal: 14,
+        speedLeft: 210,
+        speedRight: 210,
+        spawnMs: 600,
+        hitWindow: 36,
+        pool: 8,
+        colorMode: true,
+        title: "Sector 5: Decoy Protocols",
+        text: "More protocol types increase noise."
+      },
+      {
+        level: 6,
+        goal: 16,
+        speedLeft: 225,
+        speedRight: 255,
+        spawnMs: 560,
+        hitWindow: 34,
+        pool: 8,
+        colorMode: true,
+        title: "Sector 6: Asymmetric Flow",
+        text: "Lanes are desynced. Ultimate focus required."
+      }
+    ];
+
+    const MAX_LIVES = 3;
+    const ITEM_SIZE = 84;
+    const SPAWN_PADDING = 120;
+    const START_Y_OFFSET = 90;
+    const END_Y_OFFSET = 90;
+
+    const leftLaneEl = document.getElementById("leftLane");
+    const rightLaneEl = document.getElementById("rightLane");
+    const playfieldEl = document.getElementById("playfield");
+    const matchButton = document.getElementById("matchButton");
+    const restartButton = document.getElementById("restartButton");
+    const startButton = document.getElementById("startButton");
+    const nextButton = document.getElementById("nextButton");
+    const playAgainButton = document.getElementById("playAgainButton");
+    const startOverlay = document.getElementById("startOverlay");
+    const endOverlay = document.getElementById("endOverlay");
+    const quizOverlay = document.getElementById("quizOverlay");
+    const quizQuestionEl = document.getElementById("quizQuestion");
+    const quizOptionsEl = document.getElementById("quizOptions");
+    const quizProgressEl = document.getElementById("quizProgress");
+    const quizDotsEl = document.getElementById("quizDots");
+    const quitQuizButton = document.getElementById("quitQuizButton");
+    const walkthroughOverlay = document.getElementById("walkthroughOverlay");
+    const walkthroughContent = document.getElementById("walkthroughContent");
+    const walkthroughTitle = document.getElementById("walkthroughTitle");
+    const walkthroughText = document.getElementById("walkthroughText");
+    const walkthroughIcon = document.getElementById("walkthroughIcon");
+    const walkthroughNext = document.getElementById("walkthroughNext");
+    const walkthroughDots = document.getElementById("walkthroughDots");
+    
+    const endTitle = document.getElementById("endTitle");
+    const endText = document.getElementById("endText");
+    const endScore = document.getElementById("endScore");
+    const endBest = document.getElementById("endBest");
+    const toastEl = document.getElementById("toast");
+    const connectLine = document.getElementById("connectLine");
+
+    const levelChip = document.getElementById("levelChip");
+    const scoreChip = document.getElementById("scoreChip");
+    const comboChip = document.getElementById("comboChip");
+    const livesChip = document.getElementById("livesChip");
+    const livesCountEl = document.getElementById("livesCount");
+    const progressFill = document.getElementById("progressFill");
+    const goalChip = document.getElementById("goalChip");
+    const targetPreview = document.getElementById("targetPreview");
+    const ruleTitle = document.getElementById("ruleTitle");
+    const ruleText = document.getElementById("ruleText");
+
+    let game = null;
+    let rafId = null;
+    let toastTimer = null;
+    
+    let walkthroughState = {
+      active: false,
+      currentStep: 0,
+      steps: [
+        {
+          title: "Mission Brief",
+          text: "Welcome, Agent. Your objective is to synchronize security protocols to prevent a global data breach.",
+          icon: "shield_person"
+        },
+        {
+          title: "Synchronization",
+          text: "Security tokens flow through two encrypted lanes. Synchronize them exactly when they enter the glowing Decryption Zone.",
+          icon: "sync_alt"
+        },
+        {
+          title: "Match Action",
+          text: "Click the Match button or press Space to synchronize the tokens. Identical icons must be matched to secure the system.",
+          icon: "vibration"
+        },
+        {
+          title: "Validation",
+          text: "If a breach occurs or a sector is secured, you must pass a Security Validation quiz to proceed. Knowledge is your best defense.",
+          icon: "psychology"
+        }
+      ]
+    };
+
+    let quizState = {
+      active: false,
+      mode: "resume", // "resume" or "progress"
+      correctCount: 0,
+      currentQuestion: null,
+      usedIndices: new Set()
+    };
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function randomInt(max) {
+      return Math.floor(Math.random() * max);
+    }
+
+    function pickRandom(arr) {
+      return arr[randomInt(arr.length)];
+    }
+
+    function shuffle(arr) {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy;
+    }
+
+    function getCurrentLevelConfig() {
+      const baseIndex = Math.min(game.levelIndex, LEVELS.length - 1);
+      const config = { ...LEVELS[baseIndex] };
+      
+      // Calculate a difficulty multiplier for levels beyond the predefined set
+      const prestigeCount = Math.floor(game.levelIndex / LEVELS.length);
+      const difficultyMultiplier = 1 + (prestigeCount * 0.2);
+      
+      config.level = game.levelIndex + 1;
+      config.speedLeft *= difficultyMultiplier;
+      config.speedRight *= difficultyMultiplier;
+      config.spawnMs = Math.max(300, config.spawnMs / difficultyMultiplier);
+      config.goal = Math.min(50, config.goal + (prestigeCount * 2));
+      
+      return config;
+    }
+
+    function getIngredientByName(name) {
+      return INGREDIENTS.find((item) => item.name === name) || null;
+    }
+
+    function getPool(level) {
+      return INGREDIENTS.slice(0, level.pool);
+    }
+
+    function getViewportHeight() {
+      return leftLaneEl.clientHeight || 500;
+    }
+
+    function getHitCenterY() {
+      const isMobile = window.innerWidth < 1024;
+      return getViewportHeight() * (isMobile ? 0.3 : 0.4);
+    }
+
+    function getOffscreenTop() {
+      return -START_Y_OFFSET;
+    }
+
+    function getOffscreenBottom() {
+      return getViewportHeight() + END_Y_OFFSET;
+    }
+
+    function createItemElement(item) {
+      const el = document.createElement("div");
+      el.className = "item";
+      if (item.color) {
+        el.classList.add(`color-${item.color}`);
+      }
+
+      const iconContainer = document.createElement("div");
+      iconContainer.className = "w-full h-full bg-white rounded-[1.5rem] p-3 shadow-md flex items-center justify-center";
+      
+      const icon = document.createElement("span");
+      icon.className = "material-symbols-outlined text-4xl text-primary";
+      icon.style.fontVariationSettings = "'FILL' 1";
+      icon.textContent = item.icon;
+
+      iconContainer.appendChild(icon);
+      el.appendChild(iconContainer);
+      return el;
+    }
+
+    function makeLaneItem({ ingredient, color, y, direction }) {
+      return {
+        id: `${ingredient.name}-${color || "plain"}-${Math.random().toString(36).slice(2)}`,
+        name: ingredient.name,
+        icon: ingredient.icon,
+        color,
+        y,
+        direction,
+        active: false,
+        el: null,
+        hitLock: false
+      };
+    }
+
+    function showToast(text, ms = 700) {
+      if (toastTimer) {
+        clearTimeout(toastTimer);
+      }
+      toastEl.textContent = text;
+      toastEl.classList.add("show");
+      toastTimer = setTimeout(() => {
+        toastEl.classList.remove("show");
+      }, ms);
+    }
+
+    function pulseConnection() {
+      connectLine.classList.remove("show");
+      void connectLine.offsetWidth;
+      connectLine.classList.add("show");
+    }
+
+    function playBeep(kind) {
+      const AudioContextRef = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextRef) return;
+
+      if (!game.audioCtx) {
+        game.audioCtx = new AudioContextRef();
+      }
+
+      const ctx = game.audioCtx;
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+      }
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const now = ctx.currentTime;
+
+      osc.type = kind === "good" ? "sine" : "triangle";
+      osc.frequency.setValueAtTime(kind === "good" ? 620 : 220, now);
+      osc.frequency.exponentialRampToValueAtTime(kind === "good" ? 860 : 140, now + 0.12);
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(kind === "good" ? 0.05 : 0.04, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    }
+
+    function vibrate(ms) {
+      if (!("vibrate" in navigator)) return;
+      navigator.vibrate(ms);
+    }
+
+    function updateLivesUI() {
+      const oldVal = livesCountEl.textContent;
+      livesCountEl.textContent = game.lives;
+      
+      if (oldVal !== String(game.lives)) {
+        livesChip.classList.remove("heart-pulse");
+        void livesChip.offsetWidth;
+        livesChip.classList.add("heart-pulse");
+      }
+    }
+
+    function getRank(score) {
+      if (score < 500) return "Security Trainee";
+      if (score < 1500) return "Security Analyst";
+      if (score < 3000) return "Senior Analyst";
+      if (score < 6000) return "Security Architect";
+      return "Chief Security Officer";
+    }
+
+    function updateHUD() {
+      const level = getCurrentLevelConfig();
+      scoreChip.textContent = game.score.toLocaleString();
+      levelChip.textContent = `LEVEL ${level.level}`;
+      
+      const rankTitle = document.getElementById("rankTitle");
+      if (rankTitle) rankTitle.textContent = getRank(game.score);
+
+      const progress = (game.matches / level.goal) * 100;
+      progressFill.style.width = `${progress}%`;
+      
+      comboChip.textContent = `x${Math.max(1, game.combo)}`;
+      goalChip.textContent = `${game.matches} / ${level.goal}`;
+      ruleTitle.textContent = level.title;
+      ruleText.textContent = level.text;
+
+      const sideLevel = document.getElementById("sideLevel");
+      const sideRule = document.getElementById("sideRule");
+      const sideTip = document.getElementById("sideTip");
+      if (sideLevel) sideLevel.textContent = level.level;
+      if (sideRule) sideRule.textContent = level.text;
+      if (sideTip && game.ended === false) {
+        // Randomly rotate tip every level if you want, or just keep one
+      }
+
+      const previewItem = getPool(level)[0];
+      // Target preview logic if needed in future
+      updateLivesUI();
+    }
+
+    function showQuiz(mode = "resume") {
+      quizState.active = true;
+      quizState.mode = mode;
+      quizState.correctCount = 0;
+      quizState.usedIndices.clear();
+      
+      const quizTitle = document.querySelector("#quizOverlay h2");
+      const quizDesc = document.querySelector("#quizOverlay p");
+      if (mode === "progress") {
+        quizTitle.textContent = "Security Validation";
+        quizDesc.textContent = "Sector secured. Complete validation to proceed.";
+      } else {
+        quizTitle.textContent = "Emergency Restoration";
+        quizDesc.textContent = "System breach detected. Solve puzzles to restore access.";
+      }
+
+      quizOverlay.classList.add("show");
+      renderNextQuizQuestion();
+    }
+
+    function renderNextQuizQuestion() {
+      let index;
+      do {
+        index = randomInt(CYBER_QUIZ.length);
+      } while (quizState.usedIndices.has(index));
+      
+      quizState.usedIndices.add(index);
+      quizState.currentQuestion = CYBER_QUIZ[index];
+      
+      quizQuestionEl.textContent = quizState.currentQuestion.q;
+      quizProgressEl.textContent = `Task ${quizState.correctCount + 1} of 3`;
+      
+      // Update dots
+      const dots = quizDotsEl.children;
+      for (let i = 0; i < dots.length; i++) {
+        dots[i].className = `w-2 h-2 rounded-full ${i < quizState.correctCount ? 'bg-primary' : 'bg-surface-container-highest'}`;
+      }
+
+      quizOptionsEl.innerHTML = "";
+      quizState.currentQuestion.a.forEach((opt, idx) => {
+        const btn = document.createElement("button");
+        btn.className = "w-full py-3 px-4 text-left rounded-xl bg-surface-container-low hover:bg-surface-container-high font-bold transition-all border border-transparent hover:border-primary/20 text-sm";
+        btn.textContent = opt;
+        btn.onclick = () => handleQuizAnswer(idx);
+        quizOptionsEl.appendChild(btn);
+      });
+    }
+
+    function handleQuizAnswer(selectedIndex) {
+      if (selectedIndex === quizState.currentQuestion.c) {
+        quizState.correctCount += 1;
+        vibrate(20);
+        if (quizState.correctCount >= 3) {
+          resumeGameAfterQuiz();
+        } else {
+          renderNextQuizQuestion();
+        }
+      } else {
+        vibrate(100);
+        showToast("Access Denied. Quiz Reset.");
+        quizState.correctCount = 0;
+        quizState.usedIndices.clear();
+        renderNextQuizQuestion();
+      }
+    }
+
+    function resumeGameAfterQuiz() {
+      quizState.active = false;
+      quizOverlay.classList.remove("show");
+      
+      if (quizState.mode === "progress") {
+        showEndOverlay(
+          `Sector ${game.levelIndex + 1} Secured`,
+          "Integrity maintained. The system is scaling up protocols."
+        );
+      } else {
+        game.lives = 1;
+        game.running = true;
+        game.ended = false;
+        updateHUD();
+        showToast("Access Restored. Continue.");
+        startLoop();
+      }
+    }
+
+    function abortQuiz() {
+      quizState.active = false;
+      quizOverlay.classList.remove("show");
+      showEndOverlay(
+        "Firewall Compromised",
+        "Your system integrity failed. Re-scan and try to keep the sync alive."
+      );
+    }
+
+    function resetLaneDOM() {
+      leftLaneEl.innerHTML = "";
+      rightLaneEl.innerHTML = "";
+    }
+
+    function clearItemEffects(items) {
+      for (const item of items) {
+        item.el.classList.remove("good", "bad");
+      }
+    }
+
+    function buildGameState(levelIndex = 0) {
+      return {
+        levelIndex,
+        score: 0,
+        combo: 0,
+        bestCombo: 0,
+        matches: 0,
+        lives: MAX_LIVES,
+        running: false,
+        ended: false,
+        audioCtx: null,
+        lastTime: 0,
+        spawnTimerLeft: 0,
+        spawnTimerRight: 0,
+        leftItems: [],
+        rightItems: []
+      };
+    }
+
+    function setupLevel(levelIndex, keepScore = true) {
+      const prevScore = keepScore && game ? game.score : 0;
+      const prevBestCombo = keepScore && game ? game.bestCombo : 0;
+      const prevLives = keepScore && game ? game.lives : MAX_LIVES;
+
+      resetLaneDOM();
+
+      game.levelIndex = levelIndex;
+      game.matches = 0;
+      game.combo = 0;
+      game.score = prevScore;
+      game.bestCombo = prevBestCombo;
+      game.lives = prevLives;
+      game.ended = false;
+      game.running = true;
+      game.lastTime = 0;
+      game.spawnTimerLeft = 0;
+      game.spawnTimerRight = 0;
+      game.leftItems = [];
+      game.rightItems = [];
+
+      updateHUD();
+      hideEndOverlay();
+    }
+
+    function startNewRun() {
+      game = buildGameState(0);
+      setupLevel(0, false);
+      hideStartOverlay();
+      startLoop();
+    }
+
+    function restartRun() {
+      cancelLoop();
+      game = buildGameState(0);
+      setupLevel(0, false);
+      hideStartOverlay();
+      startLoop();
+    }
+
+    function nextLevel() {
+      setupLevel(game.levelIndex + 1, true);
+      startLoop();
+    }
+
+    function startLoop() {
+      cancelLoop();
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function cancelLoop() {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }
+
+    function hideStartOverlay() {
+      startOverlay.classList.remove("show");
+    }
+
+    function showStartOverlay() {
+      // Check if walkthrough already shown this session
+      const shown = sessionStorage.getItem("cyberMatchWalkthrough");
+      if (!shown) {
+        showWalkthrough();
+      } else {
+        startOverlay.classList.add("show");
+      }
+    }
+
+    function showWalkthrough() {
+      walkthroughState.active = true;
+      walkthroughState.currentStep = 0;
+      updateWalkthroughUI();
+      walkthroughOverlay.classList.add("show");
+    }
+
+    function updateWalkthroughUI() {
+      const step = walkthroughState.steps[walkthroughState.currentStep];
+      
+      // Animate transition
+      walkthroughContent.style.opacity = "0";
+      walkthroughContent.style.transform = "translateY(10px)";
+      
+      setTimeout(() => {
+        walkthroughTitle.textContent = step.title;
+        walkthroughText.textContent = step.text;
+        walkthroughIcon.textContent = step.icon;
+        
+        // Update dots
+        const dots = walkthroughDots.children;
+        for (let i = 0; i < dots.length; i++) {
+          dots[i].className = `w-12 h-1.5 rounded-full transition-all duration-300 ${i === walkthroughState.currentStep ? 'bg-primary' : 'bg-surface-container-highest'}`;
+        }
+        
+        if (walkthroughState.currentStep === walkthroughState.steps.length - 1) {
+          walkthroughNext.querySelector("span").textContent = "Start Mission";
+        } else {
+          walkthroughNext.querySelector("span").textContent = "Continue";
+        }
+
+        walkthroughContent.style.opacity = "1";
+        walkthroughContent.style.transform = "translateY(0)";
+      }, 200);
+    }
+
+    function nextWalkthroughStep() {
+      if (walkthroughState.currentStep < walkthroughState.steps.length - 1) {
+        walkthroughState.currentStep += 1;
+        updateWalkthroughUI();
+      } else {
+        finishWalkthrough();
+      }
+    }
+
+    function finishWalkthrough() {
+      walkthroughState.active = false;
+      sessionStorage.setItem("cyberMatchWalkthrough", "true");
+      walkthroughOverlay.classList.remove("show");
+      startOverlay.classList.add("show");
+    }
+
+    function hideEndOverlay() {
+      endOverlay.classList.remove("show");
+    }
+
+    function showEndOverlay(title, text) {
+      endTitle.textContent = title;
+      endText.textContent = text;
+      
+      const tipArea = document.getElementById("securityTip");
+      if (tipArea) {
+        tipArea.textContent = pickRandom(SECURITY_TIPS);
+      }
+      
+      endOverlay.classList.add("show");
+    }
+
+    function createRandomIngredient(level) {
+      const ingredient = pickRandom(getPool(level));
+      const color = level.colorMode ? pickRandom(COLORS) : null;
+      return { ingredient, color };
+    }
+
+    function maybeSpawnPair(level) {
+      const shouldCreateMatch = Math.random() < 0.42;
+      const leftData = createRandomIngredient(level);
+      let rightData = createRandomIngredient(level);
+
+      if (shouldCreateMatch) {
+        rightData = {
+          ingredient: leftData.ingredient,
+          color: level.colorMode ? leftData.color : null
+        };
+      }
+
+      const leftItem = makeLaneItem({
+        ingredient: leftData.ingredient,
+        color: leftData.color,
+        y: getOffscreenBottom(),
+        direction: "up"
+      });
+
+      const rightItem = makeLaneItem({
+        ingredient: rightData.ingredient,
+        color: rightData.color,
+        y: getOffscreenTop(),
+        direction: "down"
+      });
+
+      leftItem.el = createItemElement(leftItem);
+      rightItem.el = createItemElement(rightItem);
+
+      leftLaneEl.appendChild(leftItem.el);
+      rightLaneEl.appendChild(rightItem.el);
+
+      game.leftItems.push(leftItem);
+      game.rightItems.push(rightItem);
+    }
+
+    function updateLaneItems(items, deltaPx) {
+      const hitCenter = getHitCenterY();
+      const level = getCurrentLevelConfig();
+      const hitRange = level.hitWindow;
+
+      for (const item of items) {
+        item.y += item.direction === "up" ? -deltaPx : deltaPx;
+        item.el.style.top = `${item.y}px`;
+
+        const inWindow = Math.abs(item.y - hitCenter) <= hitRange;
+        item.active = inWindow;
+        item.el.classList.toggle("active", inWindow);
+      }
+    }
+
+    function removeExpiredItems() {
+      const topLimit = getOffscreenTop() - ITEM_SIZE;
+      const bottomLimit = getOffscreenBottom() + ITEM_SIZE;
+
+      game.leftItems = game.leftItems.filter((item) => {
+        const keep = item.y > topLimit;
+        if (!keep) {
+          item.el.remove();
+        }
+        return keep;
+      });
+
+      game.rightItems = game.rightItems.filter((item) => {
+        const keep = item.y < bottomLimit;
+        if (!keep) {
+          item.el.remove();
+        }
+        return keep;
+      });
+    }
+
+    function getClosestActiveItem(items) {
+      const hitCenter = getHitCenterY();
+      const active = items.filter((item) => item.active);
+      if (!active.length) return null;
+
+      const sorted = active.sort((a, b) => {
+        return Math.abs(a.y - hitCenter) - Math.abs(b.y - hitCenter);
+      });
+
+      return sorted[0];
+    }
+
+    function isMatch(leftItem, rightItem) {
+      if (!leftItem || !rightItem) return false;
+      if (leftItem.name !== rightItem.name) return false;
+
+      const level = LEVELS[game.levelIndex];
+      if (level.colorMode && leftItem.color !== rightItem.color) {
+        return false;
+      }
+
+      return true;
+    }
+
+    function markItemResult(item, kind) {
+      if (!item) return;
+      item.el.classList.remove("good", "bad");
+      item.el.classList.add(kind);
+      setTimeout(() => {
+        if (item.el) {
+          item.el.classList.remove(kind);
+        }
+      }, 180);
+    }
+
+    function awardMatch(leftItem, rightItem) {
+      game.matches += 1;
+      game.combo += 1;
+      game.bestCombo = Math.max(game.bestCombo, game.combo);
+
+      const accuracyBonus = Math.max(
+        0,
+        20 - Math.round(
+          Math.abs(leftItem.y - getHitCenterY()) + Math.abs(rightItem.y - getHitCenterY())
+        )
+      );
+
+      game.score += 100 + (game.combo - 1) * 10 + accuracyBonus;
+
+      markItemResult(leftItem, "good");
+      markItemResult(rightItem, "good");
+      pulseConnection();
+      playBeep("good");
+      vibrate(20);
+      showToast(game.combo >= 5 ? `Combo x${game.combo}` : "Match");
+
+      leftItem.hitLock = true;
+      rightItem.hitLock = true;
+
+      updateHUD();
+
+      const level = getCurrentLevelConfig();
+      if (game.matches >= level.goal) {
+        onLevelClear();
+      }
+    }
+
+    function penalizeMiss(message) {
+      game.combo = 0;
+      game.lives = Math.max(0, game.lives - 1);
+      playBeep("bad");
+      vibrate(60);
+      showToast(message);
+      updateHUD();
+
+      if (game.lives <= 0) {
+        onGameOver();
+      }
+    }
+
+    function attemptMatch() {
+      if (!game || !game.running || game.ended) return;
+
+      const leftItem = getClosestActiveItem(game.leftItems);
+      const rightItem = getClosestActiveItem(game.rightItems);
+
+      clearItemEffects(game.leftItems);
+      clearItemEffects(game.rightItems);
+
+      if (!leftItem || !rightItem) {
+        penalizeMiss("No pair in window");
+        return;
+      }
+
+      if (leftItem.hitLock || rightItem.hitLock) {
+        penalizeMiss("Already used");
+        return;
+      }
+
+      if (!isMatch(leftItem, rightItem)) {
+        markItemResult(leftItem, "bad");
+        markItemResult(rightItem, "bad");
+        penalizeMiss("Wrong pair");
+        return;
+      }
+
+      awardMatch(leftItem, rightItem);
+    }
+
+    function onLevelClear() {
+      game.running = false;
+      game.ended = true;
+      cancelLoop();
+
+      nextButton.disabled = false;
+      nextButton.style.opacity = "1";
+      nextButton.style.pointerEvents = "auto";
+
+      showQuiz("progress");
+    }
+
+    function onGameOver() {
+      game.running = false;
+      game.ended = true;
+      cancelLoop();
+
+      nextButton.disabled = true;
+      nextButton.style.opacity = "0.45";
+      nextButton.style.pointerEvents = "none";
+
+      // Trigger Quiz instead of direct game over
+      showQuiz("resume");
+    }
+
+    function tick(timestamp) {
+      if (!game || !game.running) return;
+
+      if (!game.lastTime) {
+        game.lastTime = timestamp;
+      }
+
+      const deltaMs = Math.min(32, timestamp - game.lastTime);
+      game.lastTime = timestamp;
+
+      const level = getCurrentLevelConfig();
+      game.spawnTimerLeft += deltaMs;
+      game.spawnTimerRight += deltaMs;
+
+      const leftDelta = (level.speedLeft * deltaMs) / 1000;
+      const rightDelta = (level.speedRight * deltaMs) / 1000;
+
+      if (game.spawnTimerLeft >= level.spawnMs || game.spawnTimerRight >= level.spawnMs) {
+        game.spawnTimerLeft = 0;
+        game.spawnTimerRight = 0;
+        maybeSpawnPair(level);
+      }
+
+      updateLaneItems(game.leftItems, leftDelta);
+      updateLaneItems(game.rightItems, rightDelta);
+      removeExpiredItems();
+
+      rafId = requestAnimationFrame(tick);
+    }
+
+    matchButton.addEventListener("click", attemptMatch);
+    restartButton.addEventListener("click", restartRun);
+    startButton.addEventListener("click", startNewRun);
+    playAgainButton.addEventListener("click", restartRun);
+    nextButton.addEventListener("click", nextLevel);
+    quitQuizButton.addEventListener("click", abortQuiz);
+    walkthroughNext.addEventListener("click", nextWalkthroughStep);
+
+    window.addEventListener("keydown", (event) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        attemptMatch();
+      }
+    });
+
+    window.addEventListener("resize", () => {
+      if (!game) return;
+      for (const item of [...game.leftItems, ...game.rightItems]) {
+        item.el.style.top = `${item.y}px`;
+      }
+    });
+
+    game = buildGameState(0);
+    updateHUD();
+    showStartOverlay();
+  </script>
+</body>
+</html>

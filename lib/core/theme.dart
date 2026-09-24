@@ -12,6 +12,7 @@ class CyberTheme {
   static const Color accent = Color(0xFFFF6B00); // Orange Highlights
   static const Color warning = Color(0xFFFFB300); // Warning Amber
   static const Color danger = Color(0xFFBA1A1A); // Threat Alert Red
+  static const Color success = Color(0xFF2E7D32); // Success Green
   
   static const Color textPrimary = Color(0xFF1B1C1C); // Deep Charcoal Text
   static const Color textSecondary = Color(0xFF5A4136); // Soft Brown/Cream Text

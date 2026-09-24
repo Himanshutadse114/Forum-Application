@@ -1,0 +1,24 @@
+# CyberShield Backend .htaccess
+# Ensures Authorization header is passed through to PHP
+
+# Pass Authorization header to PHP (required for JWT to work)
+CGIPassAuth On
+
+# Fallback for Apache servers where CGIPassAuth doesn't work
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
+# Block direct access to .env file
+<Files ".env">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Block access to _core.php directly
+<Files "_core.php">
+    Order allow,deny
+    Deny from all
+</Files>

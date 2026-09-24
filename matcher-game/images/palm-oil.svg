@@ -1,0 +1,16 @@
+<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'>
+<title>Palm Oil Bottle</title>
+<g stroke='#000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'>
+<!-- cap -->
+<rect x='27' y='14' width='10' height='4' fill='#c94d1b' />
+<!-- neck -->
+<rect x='28' y='18' width='8' height='4' fill='#e7641f' />
+<!-- main bottle body -->
+<path d='M22 22 L42 22 L44 28 L44 46 L42 52 L22 52 L20 46 L20 28 Z'
+fill='#f27a1f' />
+<!-- highlight strip -->
+<path d='M24 26 L28 26 L28 48 L24 48 Z' fill='#f8a15a' stroke='none' />
+</g>
+</svg>
+
+

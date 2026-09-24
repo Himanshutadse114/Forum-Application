@@ -1,0 +1,11 @@
+<svg width='64' height='64' viewBox='0 0 64 64' xmlns='http://www.w3.org/2000/svg'>
+<title>Yam Root</title>
+<g stroke='#000' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'>
+<!-- main body -->
+<ellipse cx="32" cy="32" rx="20" ry="13" fill="#b27a3a" /><!-- subtle taper on one side -->
+<path d='M14 32 C15 28 17 25 19 23 C15 24 12 26 10 29 C11 31 12 32 14 32 Z' fill='#b27a3a' />
+<!-- highlight -->
+<ellipse cx='27' cy='29' rx='7' ry='4' fill='#d89a52' stroke='none' />
+</g>
+</svg>
+

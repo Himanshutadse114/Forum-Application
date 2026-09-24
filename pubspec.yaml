@@ -21,9 +21,20 @@ dependencies:
   path_provider: ^2.1.1
   google_fonts: ^6.1.0
   intl: ^0.19.0
-  url_launcher: 6.2.5
+  url_launcher: ^6.3.2
   webview_flutter: 4.4.0
-
+  google_generative_ai: ^0.4.7
+  flutter_sms_inbox: ^1.0.4
+  permission_handler: ^12.0.1
+  freerasp: ^6.1.1
+  file_picker: ^8.0.0
+  google_sign_in: ^6.2.1
+  googleapis: ^13.0.0
+  extension_google_sign_in_as_googleapis_auth: ^2.0.13
+  archive: ^3.6.1
+  installed_apps: ^1.4.3
+  flutter_local_notifications: ^22.0.0
+  audioplayers: ^6.7.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -34,6 +45,11 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/matcher-game/
+    - assets/matcher-game/images/
+    - assets/drone-game/
+    - assets/shieldmaze/
+    - assets/shieldmaze/assets/
 
 dependency_overrides:
   url_launcher_android: 6.3.10
